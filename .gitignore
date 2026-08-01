@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.env
+.env.*
+artifacts/
+data/
+*.joblib
+*.pkl
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

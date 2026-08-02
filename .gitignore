@@ -1,16 +1,33 @@
+# Python environments and caches
 .venv/
 __pycache__/
 *.py[cod]
 .pytest_cache/
 .ruff_cache/
+
+# Coverage
 .coverage
 htmlcov/
+
+# Local configuration and secrets
 .env
 .env.*
+
+# Python packaging
+*.egg-info/
+build/
+dist/
+
+# ML data, artifacts, and experiment outputs
 artifacts/
 data/
+mlruns/
+models/
+checkpoints/
 *.joblib
 *.pkl
+
+# Editor and OS files
 .DS_Store
 Thumbs.db
 .vscode/

@@ -34,7 +34,9 @@ After Python changes, run the checks configured in the repository. At minimum, r
 ```powershell
 ruff check .
 ruff format --check .
+mypy src tests
 python -m pytest
+python -m build
 ```
 
 If formatting fails, run:
@@ -43,7 +45,9 @@ If formatting fails, run:
 ruff format .
 ruff check .
 ruff format --check .
+mypy src tests
 python -m pytest
+python -m build
 ```
 
 Do not claim checks passed unless they were actually run.

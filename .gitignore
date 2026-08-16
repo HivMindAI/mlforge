@@ -4,6 +4,11 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .ruff_cache/
+.mypy_cache/
+.cache/
+.codex_tmp/
+/tmp/
+/output/
 
 # Coverage
 .coverage
@@ -12,6 +17,7 @@ htmlcov/
 # Local configuration and secrets
 .env
 .env.*
+!.env.example
 
 # Python packaging
 *.egg-info/
@@ -19,13 +25,14 @@ build/
 dist/
 
 # ML data, artifacts, and experiment outputs
-artifacts/
-data/
-mlruns/
-models/
-checkpoints/
+/artifacts/
+/data/
+/mlruns/
+/models/
+/checkpoints/
 *.joblib
 *.pkl
+*.mlforge
 
 # Editor and OS files
 .DS_Store

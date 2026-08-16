@@ -1,77 +1,228 @@
-# MLForge Roadmap
+# MLForge Completion Roadmap
 
-MLForge will grow gradually from a stable Python package into a local and production-ready MLOps platform for tabular supervised machine learning.
+MLForge will become useful by completing one local tabular-ML workflow before adding platform
+infrastructure. Each milestone is a review gate. The next milestone starts only after the project
+owner accepts the current one with `DONE`.
 
-## Milestones
+## Priorities
+
+- **Critical:** Milestones 0-4 establish a correct, usable local workflow.
+- **Important:** Milestones 5-6 make artifacts usable and prepare a responsible public release.
+- **Improvements:** Milestones 7-8 are conditional product layers, not promises to add every listed
+  technology.
+
+## Critical milestones
 
 ### Milestone 0 - Repository stabilization
 
-Validate the repository, package metadata, editable install, CLI entrypoint, linting, tests, and core project documentation.
+**Status:** Accepted by the project owner on 2026-08-12.
 
-### Milestone 1 - Professional Python foundation
+**What changes:** Keep one source of package version metadata; provide truthful CLI help and
+version behavior; test installed metadata and entrypoints; make `.env.example` trackable; include
+the package build frontend in development dependencies; and document the real status, target
+architecture, development workflow, and ordered roadmap.
 
-Finalize package metadata, development dependencies, source and test layout, logging, configuration, CLI foundations, CI, and contributor instructions.
+**Why:** Every later milestone depends on a package that installs, builds, tests, and communicates
+its capabilities without metadata drift or placeholder claims.
 
-### Milestone 2 - Dataset ingestion
+**Affected files:** `pyproject.toml`, `.gitignore`, `src/mlforge/cli.py`,
+`src/mlforge/__main__.py`, `tests/`, `README.md`, `ROADMAP.md`, and
+`docs/architecture.md`.
 
-Load CSV datasets safely, validate file properties and structure, produce metadata, add CLI commands, and test ingestion behavior.
+**Dependencies:** None.
 
-### Milestone 3 - Dataset profiling
+**Verification:** Ruff lint and format checks; pytest unit/integration tests; editable install;
+`mlforge --help`; `mlforge --version`; `python -m mlforge --version`; wheel and source builds; and
+inspection of the clean Git diff.
 
-Detect column types, summarize dataset quality, identify high cardinality, identifiers, missingness, imbalance, and produce serializable profile reports.
+**Done means:** All verification passes, docs make no unimplemented capability claims, and the
+owner reviews the milestone. License selection was intentionally deferred to Milestone 6 before a
+public release.
 
-### Milestone 4 - Preprocessing pipelines
+### Milestone 1 - Typed application foundation
 
-Build reusable preprocessing configuration with numeric and categorical handling, `ColumnTransformer`, leakage prevention, and fitted/unfitted tests.
+**Status:** Accepted by the project owner on 2026-08-12.
 
-### Milestone 5 - Local training engine
+**What changes:** Add a small domain error hierarchy, immutable application configuration with
+default/environment/CLI precedence, logging setup configured only by an entrypoint, strict type
+checking, CI for supported Python versions, and contributor setup guidance. Dataset-specific
+configuration remains with the dataset implementation in Milestone 2 rather than existing unused.
 
-Train initial classification and regression models, evaluate metrics, compare runs, record metadata, save fitted pipelines, and provide a CLI workflow.
+**Why:** Dataset code needs consistent errors and settings, while contributors need automated
+feedback before core ML behavior expands.
 
-### Milestone 6 - Experiment domain layer
+**Affected modules:** `src/mlforge/errors.py`, `src/mlforge/config.py`,
+`src/mlforge/logging_config.py`, CLI wiring, `pyproject.toml`, `.env.example`,
+`.github/workflows/`, tests, `AGENTS.md`, and contributor/user/architecture documentation.
 
-Introduce projects, datasets, experiments, runs, models, artifacts, stable IDs, statuses, state transitions, failure handling, and audit information.
+**Dependencies:** Milestone 0.
 
-### Milestone 7 - Database persistence
+**Testing:** Configuration validation and precedence tests, logging capture tests, type checks, CI
+matrix execution, plus all existing checks.
 
-Add PostgreSQL-oriented persistence with SQLAlchemy, Alembic, repository abstractions, constraints, transactions, and targeted tests.
+**Done means:** Invalid settings fail clearly, importing MLForge has no logging or filesystem side
+effects, static checks pass, and CI reproduces the documented local commands.
 
-### Milestone 8 - FastAPI backend
+### Milestone 2 - Dataset ingestion and profiling
 
-Expose versioned REST APIs for datasets, experiments, runs, and models with validation, structured errors, pagination, examples, and thin routes.
+**Status:** Accepted by the project owner on 2026-08-12.
 
-### Milestone 9 - Background training workers
+**What changes:** Add explicit CSV loading options, path/file validation, a typed loaded-dataset
+result, stable metadata, target-column validation, and a JSON-serializable profile covering schema,
+missingness, cardinality, likely identifiers, target balance, and basic numeric summaries.
 
-Move training into Redis-backed Celery workers with queued states, retries, timeouts, idempotency, progress, logs, and worker tests.
+**Why:** Every downstream operation needs one validated interpretation of the source data. A
+profile makes problems visible before splitting or training.
 
-### Milestone 10 - MLflow and artifact storage
+**Affected modules:** `src/mlforge/datasets/`, configuration and errors, CLI `dataset` commands,
+fixtures, tests, and a small example dataset or generated example.
 
-Track experiments in MLflow, store parameters, metrics, models, and artifacts in object storage, and preserve model lineage.
+**Dependencies:** Milestone 1. Pandas `>=3.0,<4` is the sole runtime dependency and
+`pandas-stubs>=3.0,<4` supports development type checks.
 
-### Milestone 11 - Web dashboard
+**Testing:** Empty, missing, malformed, oversized, duplicate-header, mixed-type, missing-value,
+high-cardinality, identifier-like, classification-target, and regression-target cases; profile JSON
+round trips; CLI success and error paths.
 
-Create a React and TypeScript dashboard for projects, datasets, profiling, experiments, runs, model comparison, registry views, and prediction testing.
+**Done means:** A developer can load a supported CSV, receive deterministic metadata/profile JSON,
+and get actionable errors for unsupported inputs without changing the source file.
 
-### Milestone 12 - Model deployment and inference
+### Milestone 3 - Leakage-safe splitting and preprocessing
 
-Deploy selected model versions behind prediction APIs, validate schemas, cache models safely, switch versions, roll back, and record prediction metadata.
+**Status:** Accepted by the project owner on 2026-08-12.
 
-### Milestone 13 - Monitoring and drift
+**What changes:** Define task and preprocessing configuration; split features and target before
+fitting transformations; implement deterministic train/validation splitting; build numeric and
+categorical transformers; and return an unfitted estimator-compatible pipeline.
 
-Measure latency, throughput, errors, input and prediction distributions, drift signals, dashboards, alerts, and retraining recommendations.
+**Why:** Fitting encoders, imputers, or scalers before the validation split produces misleading
+metrics. Leakage prevention must be an architectural boundary rather than caller discipline.
 
-### Milestone 14 - Authentication and authorization
+**Affected modules:** `src/mlforge/pipelines/`, dataset types, configuration, errors, tests, and
+architecture documentation. Add scikit-learn only in this milestone.
 
-Add registration, login, secure password handling, tokens, organizations, memberships, permissions, API keys, audit logs, and security tests.
+**Dependencies:** Milestone 2.
 
-### Milestone 15 - Docker and production infrastructure
+**Testing:** Transformer fit boundaries, unseen categories, all-missing columns, unsupported target
+shapes, deterministic splits, stratification behavior, tiny datasets, and fitted/unfitted state.
 
-Containerize API, worker, frontend, and supporting services with Docker Compose, health checks, volumes, Nginx, and production-oriented settings.
+**Done means:** Tests prove validation rows do not influence fitted preprocessing state, and the
+resulting pipeline handles documented numeric/categorical inputs consistently.
 
-### Milestone 16 - CI/CD and releases
+### Milestone 4 - Local training, evaluation, and run records
 
-Run linting, formatting, type checks, tests, frontend builds, package builds, Docker image builds, dependency checks, release tags, and changelog updates.
+**Status:** Accepted by the project owner on 2026-08-13.
 
-### Milestone 17 - Documentation and open-source readiness
+**What changes:** Support a deliberately small set of baseline classification and regression
+estimators; fit the complete pipeline; calculate task-appropriate metrics; record configuration,
+data fingerprint, library versions, timestamps, warnings, and outcomes in an immutable local run
+manifest; and expose thin CLI commands for training and run inspection.
 
-Complete setup docs, tutorials, architecture docs, API examples, contribution guides, security policy, templates, model and dataset cards, and demo workflows.
+**Why:** This is the first complete value path and the point at which MLForge becomes more than data
+utilities.
+
+**Affected modules:** `src/mlforge/training/`, `src/mlforge/runs/`, pipeline APIs, CLI, examples,
+tests, and user documentation.
+
+**Dependencies:** Milestone 3.
+
+**Testing:** Classification/regression integrations, metric correctness, fixed-seed reproducibility,
+failed-run recording, atomic manifest writes, unsupported estimator/task combinations, and a
+documented end-to-end example.
+
+**Done means:** One command and one importable API can train and compare real local runs, with enough
+metadata to explain what data, configuration, code dependencies, and metrics produced each result.
+
+## Important milestones
+
+### Milestone 5 - Versioned artifacts and batch inference
+
+**Status:** Accepted by the project owner on 2026-08-13.
+
+**What changes:** Save the fitted pipeline with a versioned manifest and input schema; use atomic
+writes and integrity checks; load only explicitly trusted local artifacts; validate prediction
+inputs; and emit structured batch predictions and errors.
+
+**Why:** A metric is not useful unless the exact fitted pipeline can be applied consistently. Python
+model serialization can execute code, so the trust boundary must be prominent and tested.
+
+**Affected modules:** `src/mlforge/artifacts/`, `src/mlforge/inference.py`, run records, CLI, tests,
+security documentation, and examples.
+
+**Dependencies:** Milestone 4.
+
+**Testing:** Save/load parity, manifest-version rejection, schema mismatch, missing/extra columns,
+checksum mismatch, partial writes, explicit trust requirements, and end-to-end batch prediction.
+
+**Done means:** A locally trained artifact produces repeatable predictions for valid data and fails
+closed with clear errors for incompatible, corrupted, unsupported, or untrusted inputs.
+
+### Milestone 6 - Local product and release readiness
+
+**Status:** Accepted by the project owner on 2026-08-16.
+
+**What changes:** Stabilize the intentionally small public API; complete tutorials and reference
+documentation; add package-install smoke tests from built wheels; choose a license with owner
+approval; add contribution and security policies; define compatibility/versioning rules; and remove
+dead or experimental public code.
+
+**Why:** Passing unit tests is not sufficient for a reliable open-source release. Installation,
+documentation, legal permissions, and compatibility are part of the product contract.
+
+**Affected files:** Public package exports, examples, docs, CI/release configuration, project
+metadata, `LICENSE`, `CONTRIBUTING.md`, and `SECURITY.md`.
+
+**Dependencies:** Milestone 5 and an owner license decision.
+
+**Testing:** Clean-environment wheel installation on supported Python versions, tutorial execution,
+API/interface tests, documentation link/code checks, and the full quality suite.
+
+**Done means:** A new developer can clone or install MLForge, complete the documented workflow, and
+understand supported behavior and limitations without reverse-engineering the source.
+
+## Conditional improvements
+
+### Milestone 7 - Service adapters and shared experiment storage
+
+**What changes:** Only if multi-user or remote execution is a demonstrated requirement, introduce a
+versioned HTTP API, transactional persistence, shared artifact storage, and background execution as
+separate adapters around the existing application services. Add a model-registry concept only when
+promotion/version lifecycle requirements are defined.
+
+**Why:** These capabilities solve coordination and scale problems but would obscure the core design
+if added before the local workflow is stable.
+
+**Affected areas:** New `api`, persistence, worker, and storage adapter packages; migrations;
+deployment configuration; integration tests; and operational docs.
+
+**Dependencies:** Milestone 6 plus written product requirements for concurrency, tenancy, artifact
+volume, and deployment environment.
+
+**Testing:** Contract tests against local services, transaction and idempotency tests, migration
+tests, authorization boundaries where applicable, worker retry/timeout behavior, and failure
+recovery.
+
+**Done means:** Remote behavior preserves the same domain semantics as the local API, failures are
+observable and recoverable, and no infrastructure concern leaks into core ML modules.
+
+### Milestone 8 - Deployment, observability, and user interface
+
+**What changes:** Evaluate a web interface, online inference, model promotion/rollback, prediction
+telemetry, drift analysis, authentication/authorization, containerization, and production release
+automation individually. Implement only capabilities backed by accepted use cases and measurable
+operational requirements.
+
+**Why:** A dashboard or monitoring stack is useful only when there are real users, deployed models,
+service-level goals, and feedback loops to support.
+
+**Affected areas:** Separate frontend and deployment projects or adapters, API surfaces,
+observability, security, operations docs, and system tests.
+
+**Dependencies:** Milestone 7 and explicit product decisions for deployment, privacy, retention,
+security, and monitoring.
+
+**Testing:** Threat modeling, authorization tests, deployment smoke/rollback tests, load and latency
+checks, telemetry privacy tests, drift-method validation, and end-to-end user journeys.
+
+**Done means:** Each shipped capability has a named user problem, documented operational contract,
+tested failure behavior, and a maintainer rather than existing only for platform appearance.

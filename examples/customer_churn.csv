@@ -1,0 +1,9 @@
+age,monthly_spend,region,churn
+24,42.50,north,no
+31,68.20,south,no
+45,95.10,east,yes
+28,51.00,west,no
+52,110.75,north,yes
+39,,south,no
+34,73.40,east,no
+61,125.00,west,yes

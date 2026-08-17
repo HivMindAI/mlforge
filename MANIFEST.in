@@ -1,0 +1,9 @@
+include .env.example
+include AGENTS.md
+include CONTRIBUTING.md
+include LICENSE
+include ROADMAP.md
+include SECURITY.md
+recursive-include docs *.md
+recursive-include examples *.csv *.py
+recursive-include scripts *.py

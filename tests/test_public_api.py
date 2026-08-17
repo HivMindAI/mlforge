@@ -75,6 +75,7 @@ PUBLIC_EXPORTS = {
         "PredictionValue",
         "predict_csv",
         "predict_frame",
+        "write_predictions_csv",
     },
     "mlforge.logging_config": {"LOGGER_NAME", "configure_logging"},
     "mlforge.pipelines": {
@@ -130,6 +131,7 @@ FUNCTION_PARAMETERS = {
     "mlforge.datasets.profile_dataset": ("dataset",),
     "mlforge.inference.predict_csv": ("artifact", "path", "options"),
     "mlforge.inference.predict_frame": ("artifact", "frame"),
+    "mlforge.inference.write_predictions_csv": ("result", "path"),
     "mlforge.pipelines.build_model_pipeline": ("split", "estimator", "config", "overrides"),
     "mlforge.pipelines.build_preprocessor": ("split", "config", "overrides"),
     "mlforge.pipelines.infer_feature_schema": ("features", "overrides"),

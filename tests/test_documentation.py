@@ -29,6 +29,8 @@ def test_required_documentation_exists() -> None:
         "docs/api.md",
         "docs/architecture.md",
         "docs/compatibility.md",
+        "docs/release-validation.md",
+        "docs/releasing.md",
         "docs/security.md",
         "docs/tutorial.md",
     }

@@ -14,7 +14,7 @@ import pandas as pd
 from mlforge import __version__
 from mlforge.artifacts import LocalArtifactStore, inspect_artifact, load_artifact
 from mlforge.datasets import load_csv
-from mlforge.inference import predict_frame
+from mlforge.inference import predict_frame, write_predictions_csv
 from mlforge.pipelines import TaskType
 from mlforge.runs import LocalRunStore
 from mlforge.training import LOGISTIC_REGRESSION, TrainingConfig, train
@@ -33,7 +33,7 @@ TRAINING_CSV = """age,monthly_spend,region,churn
 
 def main() -> None:
     """Run one complete installed-package workflow in an isolated temporary directory."""
-    assert __version__ == version("mlforge")
+    assert __version__ == version("hivmind-mlforge")
     version_command = subprocess.run(
         [sys.executable, "-m", "mlforge", "--version"],
         check=True,
@@ -69,14 +69,17 @@ def main() -> None:
                 }
             ),
         )
+        prediction_output = write_predictions_csv(predictions, workspace / "predictions.csv")
 
         assert inspected.run_id == result.manifest.run_id
         assert predictions.run_id == result.manifest.run_id
         assert predictions.row_count == 2
+        assert list(pd.read_csv(prediction_output).columns) == ["row_number", "prediction"]
         print(
             json.dumps(
                 {
                     "artifact": str(saved.path),
+                    "prediction_output": str(prediction_output),
                     "predictions": predictions.to_dict(),
                     "version": __version__,
                 },

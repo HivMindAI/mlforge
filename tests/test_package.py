@@ -8,10 +8,12 @@ from pathlib import Path
 
 from mlforge import __version__
 
+DISTRIBUTION_NAME = "hivmind-mlforge"
+
 
 def test_version_matches_installed_distribution() -> None:
     """Runtime and distribution metadata should use the same version."""
-    assert __version__ == version("mlforge")
+    assert __version__ == version(DISTRIBUTION_NAME)
 
 
 def test_console_script_is_registered() -> None:
@@ -25,7 +27,7 @@ def test_console_script_is_registered() -> None:
 
 def test_runtime_dependency_metadata() -> None:
     """The distribution should declare its implemented tabular and pipeline boundaries."""
-    requirements = requires("mlforge") or []
+    requirements = requires(DISTRIBUTION_NAME) or []
 
     assert any(requirement.startswith("pandas<4,>=3.0") for requirement in requirements)
     assert any(requirement.startswith("scikit-learn<2,>=1.9") for requirement in requirements)
@@ -33,9 +35,10 @@ def test_runtime_dependency_metadata() -> None:
 
 def test_distribution_declares_and_contains_apache_license() -> None:
     """Installed metadata and files should carry the owner-selected license."""
-    package_metadata = metadata("mlforge")
-    distribution_files = files("mlforge") or ()
+    package_metadata = metadata(DISTRIBUTION_NAME)
+    distribution_files = files(DISTRIBUTION_NAME) or ()
 
+    assert package_metadata["Name"] == DISTRIBUTION_NAME
     assert package_metadata["License-Expression"] == "Apache-2.0"
     assert any(
         str(path).replace("\\", "/").endswith(".dist-info/licenses/LICENSE")
@@ -79,3 +82,28 @@ assert after == before
 
     assert completed.returncode == 0, completed.stderr
     assert list(tmp_path.iterdir()) == []
+
+
+def test_release_tag_validation_matches_runtime_version() -> None:
+    """The publishing workflow must reject a tag that differs from package metadata."""
+    repository_root = Path(__file__).resolve().parents[1]
+    script = repository_root / "scripts" / "check_release_tag.py"
+
+    accepted = subprocess.run(
+        [sys.executable, script, f"v{__version__}"],
+        cwd=repository_root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    rejected = subprocess.run(
+        [sys.executable, script, "v999.0.0"],
+        cwd=repository_root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert accepted.returncode == 0, accepted.stderr
+    assert rejected.returncode == 1
+    assert "does not match package version" in rejected.stderr

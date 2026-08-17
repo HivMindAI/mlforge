@@ -45,7 +45,7 @@ workflow orchestrators.
 ## Requirements
 
 - Python 3.11 or newer
-- Git
+- Git, only when installing a source checkout
 
 MLForge uses pandas 3.x for tabular-data behavior and scikit-learn `>=1.9,<2` for splitting and
 estimator-compatible pipelines. Dependencies needed by later ML capabilities will be introduced
@@ -53,7 +53,22 @@ only in the milestone that uses them.
 
 ## Installation
 
-Clone the repository and create a virtual environment:
+Install the published distribution into a virtual environment:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install hivmind-mlforge
+```
+
+The distribution is named `hivmind-mlforge`; the Python import package and console command both
+remain `mlforge`:
+
+```python
+import mlforge
+```
+
+For development, clone the repository and install the development extra:
 
 ```powershell
 git clone https://github.com/HivMindAI/mlforge.git
@@ -87,8 +102,12 @@ target-free CSV only after making an explicit source-trust decision:
 ```powershell
 mlforge artifacts inspect artifacts/RUN_ID.mlforge --json
 mlforge predict artifacts/RUN_ID.mlforge examples/prediction_customers.csv `
-  --trust-artifact --json
+  --trust-artifact --output predictions.csv
 ```
+
+The output CSV contains `row_number` and `prediction` columns. MLForge creates missing parent
+directories but refuses to overwrite an existing output. Omit `--output` to retain the existing
+terminal output; add `--json` for structured terminal output.
 
 Every command supports normal `--help`. Add `--json` to `train`, `runs list`, or `runs show` for
 machine-readable output. A run ID from the training output can be inspected with:
@@ -111,7 +130,7 @@ from pathlib import Path
 
 from mlforge.artifacts import LocalArtifactStore
 from mlforge.datasets import load_csv
-from mlforge.inference import predict_csv
+from mlforge.inference import predict_csv, write_predictions_csv
 from mlforge.pipelines import TaskType
 from mlforge.runs import LocalRunStore
 from mlforge.training import LOGISTIC_REGRESSION, TrainingConfig, train
@@ -133,7 +152,7 @@ predictions = predict_csv(
     trusted_artifact,
     Path("examples/prediction_customers.csv"),
 )
-print(predictions.to_json())
+write_predictions_csv(predictions, Path("predictions.csv"))
 ```
 
 The returned `result.pipeline` is the fitted preprocessing-and-model pipeline. The lower-level
@@ -253,6 +272,9 @@ direction, extension points, security boundaries, and testing strategy.
 - [Architecture and design boundaries](docs/architecture.md)
 - [Compatibility and versioning policy](docs/compatibility.md)
 - [Artifact trust and secure-use guidance](docs/security.md)
+- [Release validation record](docs/release-validation.md)
+- [Maintainer release procedure](docs/releasing.md)
+- [Changelog](CHANGELOG.md)
 - [Vulnerability reporting policy](SECURITY.md)
 
 ## Development
@@ -275,7 +297,7 @@ repository's `src` directory to `PYTHONPATH` as a substitute for an editable ins
 
 ```text
 mlforge/
-|- .github/workflows/    # Automated Python quality checks
+|- .github/workflows/    # Automated quality checks and trusted release publishing
 |- examples/             # Runnable profiling, training, artifact, and inference examples
 |- src/mlforge/          # Importable production package
 |- tests/                # Unit and integration tests
@@ -283,9 +305,12 @@ mlforge/
 |- docs/api.md           # Supported Python API contract
 |- docs/architecture.md  # Target architecture and design boundaries
 |- docs/compatibility.md # Version, runtime, and schema compatibility policy
+|- docs/releasing.md     # Owner-only release and Trusted Publishing procedure
+|- docs/release-validation.md # Offline real-data and clean-wheel validation record
 |- docs/security.md      # Artifact trust model and secure-use guidance
 |- docs/tutorial.md      # Clone-to-prediction guided workflow
 |- CONTRIBUTING.md       # Contributor setup and review contract
+|- CHANGELOG.md          # Versioned user-visible changes
 |- LICENSE               # Apache License 2.0 terms
 |- SECURITY.md           # Vulnerability reporting and support policy
 |- pyproject.toml        # Package and tool configuration

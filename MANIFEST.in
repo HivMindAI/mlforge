@@ -1,5 +1,6 @@
 include .env.example
 include AGENTS.md
+include CHANGELOG.md
 include CONTRIBUTING.md
 include LICENSE
 include ROADMAP.md

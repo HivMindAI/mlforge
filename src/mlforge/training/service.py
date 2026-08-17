@@ -63,7 +63,7 @@ def _dataset_snapshot(dataset: LoadedDataset) -> DatasetSnapshot:
 def _environment_snapshot() -> EnvironmentSnapshot:
     return EnvironmentSnapshot(
         python=sys.version.split()[0],
-        mlforge=version("mlforge"),
+        mlforge=version("hivmind-mlforge"),
         pandas=version("pandas"),
         numpy=version("numpy"),
         scipy=version("scipy"),

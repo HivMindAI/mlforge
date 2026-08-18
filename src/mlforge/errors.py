@@ -7,6 +7,9 @@ __all__ = [
     "ArtifactIntegrityError",
     "ArtifactPathError",
     "ArtifactTrustError",
+    "BenchmarkError",
+    "BenchmarkFailedError",
+    "BenchmarkStoreError",
     "ConfigurationError",
     "DatasetError",
     "DatasetFormatError",
@@ -85,6 +88,23 @@ class RunStoreError(RunError):
 
 class RunComparisonError(RunError):
     """Raised when selected run manifests cannot be compared meaningfully."""
+
+
+class BenchmarkError(MLForgeError):
+    """Base class for expected local benchmark failures."""
+
+
+class BenchmarkStoreError(BenchmarkError):
+    """Raised when a local benchmark manifest cannot be stored or read safely."""
+
+
+class BenchmarkFailedError(BenchmarkError):
+    """Raised after every requested benchmark estimator failed and was recorded."""
+
+    def __init__(self, message: str, *, benchmark_id: str, manifest_path: str) -> None:
+        super().__init__(message)
+        self.benchmark_id = benchmark_id
+        self.manifest_path = manifest_path
 
 
 class ArtifactError(MLForgeError):

@@ -14,12 +14,24 @@ from mlforge.artifacts import (
     inspect_artifact,
     load_artifact,
 )
+from mlforge.benchmarks import (
+    DEFAULT_CLASSIFICATION_BENCHMARK_ESTIMATORS,
+    BenchmarkConfig,
+    BenchmarkManifest,
+    CrossValidationConfig,
+    CrossValidationManifest,
+    LocalBenchmarkStore,
+    LocalCrossValidationStore,
+    benchmark,
+    cross_validate_benchmark,
+)
 from mlforge.config import ApplicationConfig, LogLevel
 from mlforge.datasets import CsvLoadOptions, DatasetProfile, load_csv, profile_dataset
 from mlforge.errors import ConfigurationError, MLForgeError
 from mlforge.inference import PredictionResult, predict_csv, write_predictions_csv
 from mlforge.logging_config import configure_logging
 from mlforge.pipelines import (
+    CrossValidationSplitConfig,
     FeatureOverrides,
     NumericImputationStrategy,
     PreprocessingConfig,
@@ -27,7 +39,13 @@ from mlforge.pipelines import (
     TaskType,
 )
 from mlforge.runs import LocalRunStore, RunComparison, RunManifest, compare_runs
-from mlforge.training import ALL_ESTIMATORS, TrainingConfig, train
+from mlforge.training import (
+    ALL_ESTIMATORS,
+    CLASSIFICATION_ESTIMATORS,
+    CLASSIFICATION_METRICS,
+    TrainingConfig,
+    train,
+)
 
 _BYTES_PER_MEBIBYTE = 1024 * 1024
 
@@ -70,6 +88,13 @@ def _random_seed(value: str) -> int:
         raise ArgumentTypeError(f"expected an integer random seed, received {value!r}") from error
     if not 0 <= parsed <= 2**32 - 1:
         raise ArgumentTypeError("random seed must be between 0 and 4294967295")
+    return parsed
+
+
+def _cross_validation_folds(value: str) -> int:
+    parsed = _positive_integer(value)
+    if not 2 <= parsed <= 10:
+        raise ArgumentTypeError("cross-validation folds must be between 2 and 10")
     return parsed
 
 
@@ -120,6 +145,104 @@ def _add_commands(parser: ArgumentParser) -> None:
         action="store_true",
         dest="as_json",
         help="emit the complete profile as JSON",
+    )
+
+    benchmark_parser = commands.add_parser(
+        "benchmark",
+        help="train and rank local classification baselines",
+        description=(
+            "Train classification baselines on one shared deterministic holdout or stratified "
+            "cross-validation plan and record the best observed result for an explicit metric."
+        ),
+    )
+    _add_csv_options(benchmark_parser)
+    benchmark_parser.add_argument(
+        "--estimator",
+        action="append",
+        choices=tuple(sorted(CLASSIFICATION_ESTIMATORS)),
+        metavar="NAME",
+        help=(
+            "classification estimator to include; repeat at least twice; "
+            "defaults to dummy, logistic regression, and random forest"
+        ),
+    )
+    benchmark_parser.add_argument(
+        "--metric",
+        choices=CLASSIFICATION_METRICS,
+        default="balanced_accuracy",
+        help="primary leaderboard metric (default: balanced_accuracy)",
+    )
+    benchmark_parser.add_argument(
+        "--cross-validation-folds",
+        type=_cross_validation_folds,
+        metavar="FOLDS",
+        help="use shared stratified K-fold evaluation with 2-10 folds",
+    )
+    benchmark_parser.add_argument(
+        "--validation-fraction",
+        type=_fraction,
+        help=(
+            "shared held-out row fraction between 0 and 1 (default: 0.2); cannot be combined "
+            "with --cross-validation-folds"
+        ),
+    )
+    benchmark_parser.add_argument(
+        "--random-seed",
+        type=_random_seed,
+        default=42,
+        help="shared reproducible split/estimator seed (default: 42)",
+    )
+    benchmark_parser.add_argument(
+        "--no-stratify",
+        action="store_false",
+        default=None,
+        dest="stratify",
+        help="disable the default classification target stratification",
+    )
+    benchmark_parser.add_argument(
+        "--numeric-imputation",
+        type=NumericImputationStrategy,
+        choices=tuple(NumericImputationStrategy),
+        default=NumericImputationStrategy.MEDIAN,
+        help="numeric missing-value statistic (default: median)",
+    )
+    benchmark_parser.add_argument(
+        "--no-scale-numeric",
+        action="store_false",
+        default=True,
+        dest="scale_numeric",
+        help="disable numeric standardization",
+    )
+    benchmark_parser.add_argument(
+        "--numeric-feature",
+        action="append",
+        default=[],
+        metavar="COLUMN",
+        help="force a feature to the numeric transformer; repeat as needed",
+    )
+    benchmark_parser.add_argument(
+        "--categorical-feature",
+        action="append",
+        default=[],
+        metavar="COLUMN",
+        help="force a feature to the categorical transformer; repeat as needed",
+    )
+    benchmark_parser.add_argument(
+        "--runs-dir",
+        type=Path,
+        help="holdout-only underlying run-manifest directory (default: mlruns)",
+    )
+    benchmark_parser.add_argument(
+        "--benchmarks-dir",
+        type=Path,
+        default=Path("mlbenchmarks"),
+        help="immutable benchmark-manifest directory (default: mlbenchmarks)",
+    )
+    benchmark_parser.add_argument(
+        "--json",
+        action="store_true",
+        dest="as_json",
+        help="emit the completed benchmark manifest as JSON",
     )
 
     train_parser = commands.add_parser(
@@ -435,6 +558,200 @@ def _run_train(arguments: Namespace) -> int:
     return 0
 
 
+def _render_benchmark(manifest: BenchmarkManifest, *, manifest_path: Path) -> str:
+    direction = "higher is better" if manifest.higher_is_better else "lower is better"
+    split_policy = (
+        "stratified" if manifest.split is not None and manifest.split.stratified else "unstratified"
+    )
+    lines = [
+        f"Benchmark: {manifest.benchmark_id}",
+        f"Status: {manifest.status.value}",
+        f"Manifest: {manifest_path}",
+        f"Dataset SHA-256: {manifest.dataset.sha256}",
+        f"Primary metric: {manifest.configuration.primary_metric} ({direction})",
+        (
+            f"Evaluation: one shared {split_policy} holdout "
+            f"(validation={manifest.configuration.validation_fraction:.1%}, "
+            f"seed={manifest.configuration.random_seed})"
+        ),
+        "Leaderboard:",
+    ]
+    ranked = sorted(
+        (entry for entry in manifest.entries if entry.rank is not None),
+        key=lambda entry: cast(int, entry.rank),
+    )
+    lines.extend(
+        f"  {entry.rank}. {entry.estimator}: {entry.primary_metric_value:.6g} "
+        f"({entry.duration_seconds:.3f}s, run {entry.run_id})"
+        for entry in ranked
+        if entry.primary_metric_value is not None
+    )
+    failed = tuple(entry for entry in manifest.entries if entry.status.value == "failed")
+    if failed:
+        lines.append("Failed estimators:")
+        lines.extend(
+            f"  - {entry.estimator}: {entry.failure.error_type}: {entry.failure.message}"
+            for entry in failed
+            if entry.failure is not None
+        )
+    winner = manifest.winner
+    if winner is not None and winner.primary_metric_value is not None:
+        lines.append(
+            f"Best observed: {winner.estimator} ranked first with "
+            f"{manifest.configuration.primary_metric}={winner.primary_metric_value:.6g}."
+        )
+    lines.append(
+        "Note: this ranking describes one shared holdout evaluation, not a universally best model."
+    )
+    return "\n".join(lines)
+
+
+def _run_benchmark(arguments: Namespace) -> int:
+    requested_estimators = cast(list[str] | None, arguments.estimator)
+    dataset = load_csv(
+        cast(Path, arguments.path),
+        target=cast(str, arguments.target),
+        options=_csv_options(arguments),
+    )
+    estimators = (
+        tuple(requested_estimators)
+        if requested_estimators is not None
+        else DEFAULT_CLASSIFICATION_BENCHMARK_ESTIMATORS
+    )
+    preprocessing = PreprocessingConfig(
+        numeric_imputation=cast(NumericImputationStrategy, arguments.numeric_imputation),
+        scale_numeric=cast(bool, arguments.scale_numeric),
+    )
+    feature_overrides = FeatureOverrides(
+        numeric=tuple(cast(list[str], arguments.numeric_feature)),
+        categorical=tuple(cast(list[str], arguments.categorical_feature)),
+    )
+    benchmarks_directory = cast(Path, arguments.benchmarks_dir)
+    runs_directory = cast(Path | None, arguments.runs_dir)
+    cross_validation_folds = cast(int | None, arguments.cross_validation_folds)
+    validation_fraction = cast(float | None, arguments.validation_fraction)
+    if cross_validation_folds is not None:
+        if validation_fraction is not None:
+            raise ConfigurationError(
+                "--validation-fraction cannot be combined with --cross-validation-folds."
+            )
+        if cast(bool | None, arguments.stratify) is False:
+            raise ConfigurationError(
+                "--no-stratify cannot be combined with --cross-validation-folds; "
+                "cross-validation is explicitly stratified."
+            )
+        if runs_directory is not None:
+            raise ConfigurationError(
+                "--runs-dir cannot be combined with --cross-validation-folds; "
+                "cross-validation stores one self-contained aggregate manifest."
+            )
+        cross_validation_result = cross_validate_benchmark(
+            dataset,
+            CrossValidationConfig(
+                estimators=estimators,
+                primary_metric=cast(str, arguments.metric),
+                split=CrossValidationSplitConfig(
+                    fold_count=cross_validation_folds,
+                    random_seed=cast(int, arguments.random_seed),
+                ),
+                preprocessing=preprocessing,
+                feature_overrides=feature_overrides,
+            ),
+            store=LocalCrossValidationStore(benchmarks_directory / "cross-validation"),
+        )
+        print(
+            cross_validation_result.manifest.to_json()
+            if cast(bool, arguments.as_json)
+            else _render_cross_validation(
+                cross_validation_result.manifest,
+                manifest_path=cross_validation_result.manifest_path,
+            )
+        )
+        return 0
+
+    result = benchmark(
+        dataset,
+        BenchmarkConfig(
+            estimators=estimators,
+            primary_metric=cast(str, arguments.metric),
+            split=SplitConfig(
+                validation_fraction=validation_fraction or 0.2,
+                random_seed=cast(int, arguments.random_seed),
+                stratify=cast(bool | None, arguments.stratify),
+            ),
+            preprocessing=preprocessing,
+            feature_overrides=feature_overrides,
+        ),
+        run_store=LocalRunStore(runs_directory or Path("mlruns")),
+        benchmark_store=LocalBenchmarkStore(benchmarks_directory),
+    )
+    print(
+        result.manifest.to_json()
+        if cast(bool, arguments.as_json)
+        else _render_benchmark(result.manifest, manifest_path=result.manifest_path)
+    )
+    return 0
+
+
+def _render_cross_validation(
+    manifest: CrossValidationManifest,
+    *,
+    manifest_path: Path,
+) -> str:
+    lines = [
+        f"Cross-validation benchmark: {manifest.benchmark_id}",
+        f"Status: {manifest.status.value}",
+        f"Manifest: {manifest_path}",
+        f"Dataset SHA-256: {manifest.dataset.sha256}",
+        (
+            f"Protocol: {manifest.configuration.fold_count}-fold stratified cross-validation "
+            f"(shuffle seed={manifest.configuration.random_seed})"
+        ),
+        f"Primary metric: {manifest.configuration.primary_metric}",
+        "Leaderboard:",
+    ]
+    ranked = sorted(
+        (entry for entry in manifest.entries if entry.rank is not None),
+        key=lambda entry: cast(int, entry.rank),
+    )
+    for entry in ranked:
+        if entry.primary_metric_mean is None or entry.primary_metric_standard_deviation is None:
+            continue
+        lines.append(
+            f"  {entry.rank}. {entry.estimator}: {entry.primary_metric_mean:.6g} "
+            f"± {entry.primary_metric_standard_deviation:.3g} "
+            f"({entry.duration_seconds:.3f}s total)"
+        )
+    failed = tuple(entry for entry in manifest.entries if entry.status.value == "failed")
+    if failed:
+        lines.append("Failed estimators:")
+        lines.extend(
+            f"  - {entry.estimator} at fold {entry.failure_fold}: "
+            f"{entry.failure.error_type}: {entry.failure.message}"
+            for entry in failed
+            if entry.failure is not None
+        )
+    winner = manifest.winner
+    if (
+        winner is not None
+        and winner.primary_metric_mean is not None
+        and winner.primary_metric_standard_deviation is not None
+    ):
+        lines.append(
+            f"Best observed mean: {winner.estimator} ranked first with "
+            f"{manifest.configuration.primary_metric}={winner.primary_metric_mean:.6g} "
+            f"± {winner.primary_metric_standard_deviation:.3g}."
+        )
+    if manifest.warnings:
+        lines.append("Dataset warnings:")
+        lines.extend(f"  - {message}" for message in manifest.warnings)
+    lines.append(
+        "Note: cross-validation selects an estimator; it does not fit a final deployment model "
+        "or provide a nested-tuning estimate."
+    )
+    return "\n".join(lines)
+
+
 def _render_run_list(manifests: tuple[RunManifest, ...]) -> str:
     if not manifests:
         return "No runs found."
@@ -594,6 +911,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 return _run_dataset_profile(arguments)
         if command == "train":
             return _run_train(arguments)
+        if command == "benchmark":
+            return _run_benchmark(arguments)
         if command == "runs":
             runs_command = cast(str | None, arguments.runs_command)
             if runs_command is not None:

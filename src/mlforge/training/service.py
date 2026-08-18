@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 import math
 import sys
 import warnings
@@ -24,6 +22,7 @@ from mlforge.pipelines import (
     build_model_pipeline,
     infer_feature_schema,
     split_dataset,
+    split_partition_sha256,
 )
 from mlforge.runs import (
     RUN_MANIFEST_SCHEMA_VERSION,
@@ -107,29 +106,12 @@ def _configuration_snapshot(
 
 
 def _split_snapshot(split: DatasetSplit) -> SplitSnapshot:
-    partitions: dict[str, list[int]] = {}
-    for name, index in (
-        ("train", split.train_features.index),
-        ("validation", split.validation_features.index),
-    ):
-        values = index.tolist()
-        if any(isinstance(value, bool) or not isinstance(value, int) for value in values):
-            raise TrainingError(
-                "Training requires the integer source-row index created during CSV ingestion."
-            )
-        partitions[name] = values
-    partition_content = json.dumps(
-        partitions,
-        ensure_ascii=True,
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode("utf-8")
     return SplitSnapshot(
         train_rows=len(split.train_features),
         validation_rows=len(split.validation_features),
         feature_count=split.train_features.shape[1],
         stratified=split.stratified,
-        partition_sha256=hashlib.sha256(partition_content).hexdigest(),
+        partition_sha256=split_partition_sha256(split),
     )
 
 

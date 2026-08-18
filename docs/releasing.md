@@ -34,14 +34,15 @@ secret for this workflow.
 4. Create and push the annotated tag:
 
    ```powershell
+   $releaseVersion = "X.Y.Z"
    git switch main
    git pull --ff-only
-   git tag -a v0.1.0 -m "MLForge v0.1.0"
-   git push origin v0.1.0
+   git tag -a "v$releaseVersion" -m "MLForge v$releaseVersion"
+   git push origin "v$releaseVersion"
    ```
 
-5. Create a **draft** GitHub Release for the existing tag, copy the `0.1.0` changelog section into
-   its notes, and review it.
+5. Create a **draft** GitHub Release for the existing tag, copy the matching versioned changelog
+   section into its notes, and review it. Never reuse a previously published version or tag.
 6. Publish the GitHub Release only when the PyPI publisher and GitHub `pypi` environment exactly
    match the table above.
 7. Approve the protected `pypi` deployment, if configured. Verify the workflow builds once,

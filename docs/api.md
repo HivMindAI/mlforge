@@ -40,6 +40,9 @@ Import from `mlforge.pipelines`.
 | `TaskType` | Explicit `classification` or `regression` selection. |
 | `SplitConfig` | Validation fraction, seed, and optional stratification policy. |
 | `split_dataset(dataset, *, task, config=None)` | Create copied train/validation features and targets before fitting. |
+| `CrossValidationSplitConfig` | Validated 2-10 fold count and reproducible shuffle seed. |
+| `split_classification_folds(dataset, *, config=None)` | Create deterministic, stratified, index-preserving classification folds. |
+| `split_partition_sha256(split)` | Fingerprint one exact train/validation row partition. |
 | `DatasetSplit` | Index-preserving split result with copied partitions and actual stratification state. |
 | `FeatureOverrides` | Explicit numeric/categorical role overrides for ambiguous columns. |
 | `FeatureSchema` | Ordered numeric and categorical training-feature contract. |
@@ -62,12 +65,58 @@ Import from `mlforge.training`.
 | `train(dataset, config, *, run_store=None)` | Fit one baseline, evaluate held-out rows, and persist a terminal run. |
 | `TrainingResult` | Fitted pipeline, successful manifest/path, schema, and raw feature dtypes. |
 | `evaluate_predictions(*, task, actual, predicted)` | Calculate the stable held-out metric set. |
-| `LOGISTIC_REGRESSION`, `RANDOM_FOREST_CLASSIFIER` | Classification estimator identifiers. |
+| `DUMMY_CLASSIFIER`, `LOGISTIC_REGRESSION`, `RANDOM_FOREST_CLASSIFIER` | Classification estimator identifiers. |
 | `RIDGE_REGRESSION`, `RANDOM_FOREST_REGRESSOR` | Regression estimator identifiers. |
 | `CLASSIFICATION_ESTIMATORS`, `REGRESSION_ESTIMATORS`, `ALL_ESTIMATORS` | Supported estimator collections. |
+| `CLASSIFICATION_METRICS` | Stable classification metrics accepted as benchmark objectives. |
 
 If `run_store` is omitted, `train` writes to `mlruns/`. Expected failures after a run begins are
 recorded and raised as `TrainingFailedError`; invalid configuration fails before a run starts.
+
+## Benchmarks
+
+Import from `mlforge.benchmarks`.
+
+| Public name | Purpose |
+| --- | --- |
+| `BenchmarkConfig` | Unique classification estimators, primary metric, shared split, preprocessing, and feature roles. |
+| `benchmark(dataset, config, *, run_store=None, benchmark_store=None)` | Train, rank, and record several classification baselines. |
+| `BenchmarkResult` | Aggregate manifest/path, fitted successful pipelines, all referenced run manifests, and fitted winner. |
+| `BenchmarkManifest`, `BenchmarkEntry`, `BenchmarkStatus` | Versioned aggregate evidence and terminal per-estimator outcomes. |
+| `BenchmarkConfiguration` | Serialized effective benchmark configuration. |
+| `LocalBenchmarkStore` | Create-only validated local benchmark-manifest storage. |
+| `DEFAULT_CLASSIFICATION_BENCHMARK_ESTIMATORS` | Dummy, logistic-regression, and random-forest defaults. |
+| `BENCHMARK_MANIFEST_SCHEMA_VERSION` | Independent aggregate manifest schema version. |
+| `CrossValidationConfig` | Unique classifiers, primary metric, shared fold plan, preprocessing, and feature roles. |
+| `cross_validate_benchmark(dataset, config, *, store=None)` | Fit and evaluate classifiers independently across one shared stratified fold plan. |
+| `CrossValidationResult` | Immutable selection manifest and its persisted path; no fitted deployment model. |
+| `CrossValidationManifest`, `CrossValidationEntry` | Strict aggregate protocol and terminal per-estimator outcomes. |
+| `CrossValidationFoldSnapshot`, `CrossValidationFoldResult` | Exact shared partition identity and one estimator's fold metrics. |
+| `CrossValidationMetricSummary` | Ordered fold values, arithmetic mean, population standard deviation, and direction. |
+| `CrossValidationConfiguration` | Serialized effective cross-validation configuration. |
+| `LocalCrossValidationStore` | Create-only validated cross-validation manifest storage. |
+| `CROSS_VALIDATION_MANIFEST_SCHEMA_VERSION` | Independent cross-validation manifest schema version. |
+
+The service calls the ordinary `train` application service once per estimator. Each run therefore
+retains its complete lineage and fitted preprocessing boundary. Successful runs must share the
+same source fingerprint, target, split configuration, actual stratification policy, and exact row
+partition before ranking. Ties are resolved by estimator identifier, and failed estimators remain
+in the aggregate manifest without a rank. `BenchmarkResult.winner` returns the fitted rank-one
+`TrainingResult` for optional artifact persistence.
+
+The holdout benchmark's winner means best observed for that selected metric and partition; it does
+not establish a universally best model. If every model fails, MLForge writes the aggregate and
+raises `BenchmarkFailedError`.
+
+Cross-validation uses every row for validation exactly once and gives every estimator the same
+ordered partition fingerprints. Each fold receives a fresh estimator clone and a newly fitted
+preprocessing pipeline learned only from that fold's training rows. It records every metric's fold
+values, arithmetic mean, and population standard deviation. Rank is primary-metric mean first,
+then lower standard deviation, then estimator identifier. A failed estimator records the failing
+fold and partition while successful peers remain ranked; an all-failed manifest is persisted
+before `BenchmarkFailedError` is raised. `CrossValidationResult` deliberately has no fitted winner:
+selecting an estimator is separate from training a final model, and non-nested cross-validation is
+not an unbiased estimate after tuning or repeated selection.
 
 ## Runs
 
@@ -144,6 +193,9 @@ MLForgeError
 |  `- PreprocessingError
 |- TrainingError
 |  `- TrainingFailedError
+|- BenchmarkError
+|  |- BenchmarkStoreError
+|  `- BenchmarkFailedError
 |- RunError
 |  |- RunStoreError
 |  `- RunComparisonError

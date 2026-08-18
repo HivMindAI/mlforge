@@ -5,9 +5,9 @@
 This document distinguishes the implemented local workflow from later target capabilities. The
 current implementation includes packaging, typed application configuration, domain errors,
 explicit CLI-owned logging, validated local CSV ingestion, deterministic profiling, task-aware
-splitting, leakage-safe preprocessing, four baseline estimators, held-out evaluation, immutable
+splitting, leakage-safe preprocessing, five baseline estimators, held-out evaluation, immutable
 local run manifests, compatible-run comparison, trusted-local fitted artifacts, schema-validated
-batch inference, and thin CLI adapters.
+batch inference, shared-fold classification benchmarking, and thin CLI adapters.
 
 MLForge's first product boundary is local tabular supervised machine learning. A user supplies a
 CSV dataset and explicit target, trains a classification or regression pipeline, receives metrics
@@ -44,6 +44,12 @@ flowchart LR
     E --> F["Fitted pipeline"]
     F --> G["Evaluation result"]
     G --> I["Immutable run manifest"]
+    I --> M["Immutable benchmark manifest"]
+    N["Shared benchmark configuration"] --> M
+    B --> O["Shared stratified fold plan"]
+    O --> P["Fresh fold-local pipelines + metrics"]
+    P --> Q["Immutable cross-validation manifest"]
+    R["Cross-validation configuration"] --> Q
     F --> H["Versioned trusted artifact"]
     H --> I
     H --> J["Schema-validating predictor"]
@@ -56,6 +62,9 @@ training configuration, split outcome, evaluation results, dependency versions, 
 warnings, and terminal status. It does not copy a dataset, contain a fitted model, or silently
 mutate an earlier run. A fitted artifact uses its successful run UUID as identity and records the
 canonical run-manifest SHA-256, preserving a one-way reference without mutating the run record.
+Cross-validation is a separate evidence path: every estimator uses the same ordered fold
+fingerprints, but preprocessing and model state are fitted independently within each training
+fold. Its aggregate does not represent one deployable fitted pipeline.
 
 ## Package responsibilities
 
@@ -65,6 +74,7 @@ canonical run-manifest SHA-256, preserving a one-way reference without mutating 
 | `mlforge.pipelines` | Implemented | Task-aware splitting, feature roles, and construction of unfitted leakage-safe transformers/model pipelines | Estimator fitting, metric decisions, CLI rendering, or run persistence |
 | `mlforge.training` | Implemented | Baseline estimator selection, complete pipeline fitting, held-out prediction and task metrics | Run storage, model serialization, or database/HTTP concerns |
 | `mlforge.runs` | Implemented | Run identity, strict versioned manifests, create-only atomic local storage, compatible-run comparison | Fitting estimators or storing model binaries |
+| `mlforge.benchmarks` | Implemented | Holdout and shared-fold classification orchestration, explicit-metric ranking, failure evidence, fitted holdout winner selection, and immutable aggregate storage | Estimator implementations, deployment fitting, service infrastructure, or UI rendering |
 | `mlforge.artifacts` | Implemented | Versioned manifests, atomic archives, integrity checks, exact-environment and explicit-trust loading | Metric decisions, remote provenance, or deployment |
 | `mlforge.inference` | Implemented | Raw feature-schema validation and structured dataframe/CSV batch prediction | Training or online serving infrastructure |
 | `mlforge.config` | Implemented | Immutable application settings and explicit source precedence | Environment reads at import time |
@@ -143,6 +153,54 @@ saved = artifact_store.save(first)
 trusted = artifact_store.load(first.manifest.run_id, trusted=True)
 predictions = predict_csv(trusted, Path("prediction.csv"))
 ```
+
+The implemented local benchmark composes the same training service:
+
+```python
+from pathlib import Path
+
+from mlforge.benchmarks import BenchmarkConfig, LocalBenchmarkStore, benchmark
+from mlforge.runs import LocalRunStore
+
+result = benchmark(
+    dataset,
+    BenchmarkConfig(primary_metric="balanced_accuracy"),
+    run_store=LocalRunStore(Path("mlruns")),
+    benchmark_store=LocalBenchmarkStore(Path("mlbenchmarks")),
+)
+winner = result.winner
+```
+
+The aggregate manifest references but never mutates each terminal run. All estimators use the same
+split and preprocessing configuration; strict compatible-run comparison verifies the exact source
+and partition before ranking. A deterministic evidence layer reports the selected metric, observed
+duration, and failures. The current single-holdout result is intentionally described as the best
+observed result under that protocol, not as universal model superiority or cross-validation
+stability.
+
+The cross-validation application path is independent of ordinary run storage:
+
+```python
+from pathlib import Path
+
+from mlforge.benchmarks import (
+    CrossValidationConfig,
+    LocalCrossValidationStore,
+    cross_validate_benchmark,
+)
+from mlforge.pipelines import CrossValidationSplitConfig
+
+result = cross_validate_benchmark(
+    dataset,
+    CrossValidationConfig(split=CrossValidationSplitConfig(fold_count=5)),
+    store=LocalCrossValidationStore(Path("mlbenchmarks/cross-validation")),
+)
+winner = result.manifest.winner
+```
+
+This winner is an immutable selection record, not a fitted pipeline. Each fold constructs a new
+pipeline around a fresh estimator clone, fits it only on training rows, and evaluates its paired
+validation rows. A separate final training policy is required before artifact creation.
 
 `TrainingResult.pipeline` is fitted and usable in the current process. Artifact persistence is a
 separate explicit operation because run metadata and executable model bytes have different storage
@@ -257,19 +315,20 @@ in one pipeline also makes later cross-validation and artifact serialization les
 
 ## Training, evaluation, and run semantics
 
-`TrainingConfig` explicitly pairs a task with one of four named baselines: logistic regression or
-random forest for classification, and ridge regression or random forest for regression. Invalid
-task/estimator combinations fail during configuration. Both split and estimator randomness use the
-recorded seed, and random forests use `n_jobs=1` for a stable local execution contract. MLForge
-does not yet expose arbitrary estimator parameters, tuning, cross-validation, or a plugin registry;
-the lower-level pipeline builder remains the extension point for compatible custom estimators.
+`TrainingConfig` explicitly pairs a task with one of five named baselines: dummy prior, logistic
+regression, or random forest for classification, and ridge regression or random forest for
+regression. Invalid task/estimator combinations fail during configuration. Both split and
+estimator randomness use the recorded seed, and random forests use `n_jobs=1` for a stable local
+execution contract. MLForge does not yet expose arbitrary estimator parameters, tuning,
+regression cross-validation, or a plugin registry; the lower-level pipeline builder remains the
+extension point for compatible custom estimators.
 
 `train` profiles and splits the validated dataset, constructs one preprocessing-and-estimator
 pipeline, fits it only on training rows, and predicts the held-out rows. Classification records
-accuracy, balanced accuracy, and weighted F1. Regression records mean absolute error, R-squared,
-and root mean squared error. Every recorded metric must be finite; regression evaluation therefore
-requires at least two validation rows. The service returns a fitted in-memory pipeline only after
-its successful terminal manifest is stored.
+accuracy, balanced accuracy, macro and weighted F1, macro precision, and macro recall. Regression
+records mean absolute error, R-squared, and root mean squared error. Every recorded metric must be
+finite; regression evaluation therefore requires at least two validation rows. The service returns
+a fitted in-memory pipeline only after its successful terminal manifest is stored.
 
 A `RunManifest` is a frozen, schema-versioned JSON value. It captures the effective configuration
 and estimator parameters, CSV parser choices, dataset identity and dimensions, environment
@@ -285,6 +344,41 @@ existing record cannot be overwritten. Run comparison requires at least two uniq
 runs with the same task, source fingerprint, target, validation fraction, seed, actual
 stratification policy, and exact row partition. Ranking direction comes from the recorded metric
 metadata, not its name.
+
+`benchmark` composes `train` for at least two unique classification estimators under one shared
+configuration. The dummy classifier is a required default reference point, not a candidate that is
+silently excluded from ranking. Strict run comparison verifies the same dataset and exact row
+partition before a user-selected metric determines rank; estimator identifiers break score ties so
+random run UUIDs cannot change the winner. Per-estimator wall time is observational evidence and
+does not affect rank. Expected estimator failures keep their failed run manifests and appear
+unranked in the aggregate; if every estimator fails, the aggregate is written before
+`BenchmarkFailedError` is raised.
+
+`BenchmarkManifest` has an independent schema version and create-only `LocalBenchmarkStore`. It
+records the effective shared configuration, dataset and split snapshots, metric direction, rank,
+duration, failure summaries, and underlying run UUIDs. `BenchmarkResult` retains successful fitted
+pipelines so its rank-one `TrainingResult` can be saved explicitly as an artifact. This fast
+development protocol uses one holdout partition.
+
+`cross_validate_benchmark` uses deterministic shuffled `StratifiedKFold` partitions for 2-10
+folds. The minimum target-class population must be at least the requested fold count. Each source
+row occurs in validation exactly once, train and validation indices are disjoint, and every
+estimator receives the same ordered partition SHA-256 values. Estimators and preprocessing are
+freshly cloned and fitted per training fold, so validation rows cannot affect learned transformer
+or model state.
+
+Every classification metric is stored as ordered fold values, arithmetic mean, and population
+standard deviation. Ranking uses the primary mean in its declared direction, lower standard
+deviation as a stability tie-breaker, and estimator identifier as the final deterministic
+tie-breaker; duration never affects rank. An estimator failure records the fold number, exact
+partition, completed fold prefix, and safe error details. Other estimators continue, and an
+all-failed aggregate is persisted before `BenchmarkFailedError` is raised.
+
+`CrossValidationManifest` has its own schema version and create-only
+`LocalCrossValidationStore`. It is selection evidence and intentionally does not contain or return
+a fitted winner. Final fitting, hyperparameter tuning, nested evaluation, confidence intervals,
+and resource isolation are separate policies; the ordinary fold mean must not be presented as an
+untouched post-selection test estimate.
 
 ## Artifact and inference semantics
 
@@ -330,7 +424,8 @@ and are never embedded in normal logs.
 - **Unit tests** cover validation, profiling rules, configuration, metrics, manifests, and error
   behavior with small deterministic fixtures.
 - **Integration tests** exercise CSV-to-profile behavior, real scikit-learn preprocessing/model
-  pipelines, all four MLForge training baselines, artifact save/load parity, schema-validated
+  pipelines, all five MLForge training baselines, holdout and cross-validation benchmark
+  orchestration, fold-local preprocessing boundaries, artifact save/load parity, schema-validated
   dataframe/CSV prediction, CLI workflows, and the bundled runnable examples.
 - **Interface tests** pin public function signatures, serialized schema versions, CLI output/exit
   behavior, and storage adapter contracts.

@@ -5,6 +5,12 @@ include CONTRIBUTING.md
 include LICENSE
 include ROADMAP.md
 include SECURITY.md
-recursive-include docs *.md
+include docs/api.md
+include docs/architecture.md
+include docs/compatibility.md
+include docs/release-validation.md
+include docs/releasing.md
+include docs/security.md
+include docs/tutorial.md
 recursive-include examples *.csv *.py
 recursive-include scripts *.py

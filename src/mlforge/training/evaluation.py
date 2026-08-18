@@ -12,13 +12,24 @@ from sklearn.metrics import (
     balanced_accuracy_score,
     f1_score,
     mean_absolute_error,
+    precision_score,
     r2_score,
+    recall_score,
     root_mean_squared_error,
 )
 
 from mlforge.errors import TrainingError
 from mlforge.pipelines import TaskType
 from mlforge.runs import MetricValue
+
+CLASSIFICATION_METRICS = (
+    "accuracy",
+    "balanced_accuracy",
+    "f1_macro",
+    "f1_weighted",
+    "precision_macro",
+    "recall_macro",
+)
 
 
 def _metric(name: str, value: float, *, higher_is_better: bool) -> MetricValue:
@@ -39,6 +50,7 @@ def evaluate_predictions(
     if len(actual) == 0:
         raise TrainingError("At least one validation prediction is required for evaluation.")
 
+    metrics: tuple[MetricValue, ...]
     if task is TaskType.CLASSIFICATION:
         metrics = (
             _metric(
@@ -52,8 +64,23 @@ def evaluate_predictions(
                 higher_is_better=True,
             ),
             _metric(
+                name="f1_macro",
+                value=float(f1_score(actual, predicted, average="macro", zero_division=0)),
+                higher_is_better=True,
+            ),
+            _metric(
                 name="f1_weighted",
                 value=float(f1_score(actual, predicted, average="weighted", zero_division=0)),
+                higher_is_better=True,
+            ),
+            _metric(
+                name="precision_macro",
+                value=float(precision_score(actual, predicted, average="macro", zero_division=0)),
+                higher_is_better=True,
+            ),
+            _metric(
+                name="recall_macro",
+                value=float(recall_score(actual, predicted, average="macro", zero_division=0)),
                 higher_is_better=True,
             ),
         )

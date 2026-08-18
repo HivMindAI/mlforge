@@ -5,8 +5,13 @@ from mlforge.pipelines.preprocessing import (
     build_preprocessor,
     infer_feature_schema,
 )
-from mlforge.pipelines.splitting import split_dataset
+from mlforge.pipelines.splitting import (
+    split_classification_folds,
+    split_dataset,
+    split_partition_sha256,
+)
 from mlforge.pipelines.types import (
+    CrossValidationSplitConfig,
     DatasetSplit,
     FeatureOverrides,
     FeatureSchema,
@@ -18,6 +23,7 @@ from mlforge.pipelines.types import (
 
 __all__ = [
     "DatasetSplit",
+    "CrossValidationSplitConfig",
     "FeatureOverrides",
     "FeatureSchema",
     "NumericImputationStrategy",
@@ -28,4 +34,6 @@ __all__ = [
     "build_preprocessor",
     "infer_feature_schema",
     "split_dataset",
+    "split_classification_folds",
+    "split_partition_sha256",
 ]

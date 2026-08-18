@@ -8,8 +8,8 @@ owner accepts the current one with `DONE`.
 
 - **Critical:** Milestones 0-4 establish a correct, usable local workflow.
 - **Important:** Milestones 5-6 make artifacts usable and prepare a responsible public release.
-- **Improvements:** Milestones 7-8 are conditional product layers, not promises to add every listed
-  technology.
+- **Local benchmarking:** Milestones 7-8 are accepted for the v0.2.0 local release. Milestones 9+
+  remain conditional and require separate product decisions before implementation.
 
 ## Critical milestones
 
@@ -180,9 +180,73 @@ API/interface tests, documentation link/code checks, and the full quality suite.
 **Done means:** A new developer can clone or install MLForge, complete the documented workflow, and
 understand supported behavior and limitations without reverse-engineering the source.
 
+### Milestone 7 - Local classification benchmarking
+
+**Status:** Accepted by the project owner on 2026-08-18.
+
+**What changes:** Add a local benchmark application service that trains a small explicit set of
+classification baselines against one shared deterministic holdout contract; includes a dummy
+baseline; ranks successful runs by a user-selected classification metric; records observed
+per-model duration and failures; writes a separate immutable benchmark manifest that references
+the underlying run manifests; and exposes the same workflow through Python and a thin CLI command.
+
+**Why:** MLForge already records trustworthy individual experiments. A benchmark turns those
+experiments into one reproducible answer to a common user question: which supported baseline
+performed best under this declared evaluation protocol, and what evidence produced that ranking?
+
+**Affected modules:** `src/mlforge/benchmarks/`, classification estimator and metric definitions,
+CLI and public API surfaces, local manifest storage, tests, examples, and user/architecture
+documentation.
+
+**Dependencies:** Milestone 6. The first version remains local, single-process, classification-only,
+and scikit-learn-only.
+
+**Testing:** Configuration validation, dummy-baseline behavior, identical split fingerprints,
+metric-direction ranking and deterministic tie-breaking, partial and complete estimator failures,
+manifest schema/atomicity/path safety, CLI JSON and human output, public interfaces, and the full
+quality suite.
+
+**Done means:** One command and one importable API run at least two classification baselines on the
+same dataset partition, preserve every underlying run, create a validated immutable benchmark
+record, identify the best observed model for the selected metric, and state the single-holdout
+limitation without claiming a universally best model.
+
+### Milestone 8 - Cross-validated classification benchmarking
+
+**Status:** Accepted by the project owner on 2026-08-18.
+
+**What changes:** Add deterministic stratified K-fold partitioning; fit preprocessing and each
+classifier independently inside every training fold; evaluate every estimator on the exact same
+fold plan; aggregate all classification metrics as per-fold values, means, and population standard
+deviations; rank by primary-metric mean with stability-aware deterministic tie-breaking; preserve
+failures and warnings; and store the complete protocol in a separate immutable cross-validation
+manifest exposed through Python and the benchmark CLI.
+
+**Why:** A single holdout is useful for a fast baseline but can produce a fragile ranking. Shared
+K-fold evaluation uses every row for validation once, shows fold-to-fold variability, and provides
+stronger evidence without claiming that model selection has produced an unbiased final deployment
+estimate.
+
+**Affected modules:** Fold configuration/splitting and partition fingerprints in
+`src/mlforge/pipelines/`; cross-validation services, types, storage, and CLI adapters in
+`src/mlforge/benchmarks/`; examples, tests, and user/architecture/API documentation.
+
+**Dependencies:** Milestone 7. The protocol remains local, single-process, classification-only,
+scikit-learn-only, and resource-bounded to 2-10 folds.
+
+**Testing:** Fold coverage/disjointness and deterministic fingerprints, insufficient class counts,
+same-fold fairness across estimators, preprocessing fit boundaries, metric aggregation and ranking,
+partial/complete estimator failures, strict manifest round trips and atomic storage, CLI JSON/human
+output, public interfaces, runnable examples, and the full quality suite.
+
+**Done means:** One command and one importable API run a reproducible shared stratified K-fold
+classification benchmark, expose mean and variability for every metric, keep all validation rows
+out of their fold's fitted preprocessing, record a strict immutable aggregate, and clearly separate
+model-selection evidence from final model fitting and nested tuning claims.
+
 ## Conditional improvements
 
-### Milestone 7 - Service adapters and shared experiment storage
+### Milestone 9 - Service adapters and shared experiment storage
 
 **What changes:** Only if multi-user or remote execution is a demonstrated requirement, introduce a
 versioned HTTP API, transactional persistence, shared artifact storage, and background execution as
@@ -205,7 +269,7 @@ recovery.
 **Done means:** Remote behavior preserves the same domain semantics as the local API, failures are
 observable and recoverable, and no infrastructure concern leaks into core ML modules.
 
-### Milestone 8 - Deployment, observability, and user interface
+### Milestone 10 - Deployment, observability, and user interface
 
 **What changes:** Evaluate a web interface, online inference, model promotion/rollback, prediction
 telemetry, drift analysis, authentication/authorization, containerization, and production release
@@ -218,7 +282,7 @@ service-level goals, and feedback loops to support.
 **Affected areas:** Separate frontend and deployment projects or adapters, API surfaces,
 observability, security, operations docs, and system tests.
 
-**Dependencies:** Milestone 7 and explicit product decisions for deployment, privacy, retention,
+**Dependencies:** Milestone 9 and explicit product decisions for deployment, privacy, retention,
 security, and monitoring.
 
 **Testing:** Threat modeling, authorization tests, deployment smoke/rollback tests, load and latency

@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import csv
 import json
 import math
+import os
 from dataclasses import dataclass
 from os import PathLike
 from pathlib import Path
 from typing import Any, TypeAlias
+from uuid import uuid4
 
 import pandas as pd
 
@@ -23,6 +26,7 @@ __all__ = [
     "PredictionValue",
     "predict_csv",
     "predict_frame",
+    "write_predictions_csv",
 ]
 
 
@@ -204,3 +208,66 @@ def predict_csv(
         source_path=source_path,
         predictions=result.predictions,
     )
+
+
+def _prediction_output_path(path: str | PathLike[str]) -> Path:
+    try:
+        candidate = Path(path).expanduser()
+    except (TypeError, ValueError) as error:
+        raise InferenceError("Prediction output path must be a filesystem path.") from error
+    if candidate.suffix.lower() != ".csv":
+        raise InferenceError(f"Prediction output must use the .csv extension: {candidate}")
+    if candidate.is_symlink():
+        raise InferenceError(f"Prediction output must not be a symbolic link: {candidate}")
+    try:
+        candidate.parent.mkdir(parents=True, exist_ok=True)
+        parent = candidate.parent.resolve(strict=True)
+    except (OSError, RuntimeError) as error:
+        raise InferenceError(
+            f"Could not create or resolve prediction output directory: {candidate.parent}"
+        ) from error
+    if not parent.is_dir():
+        raise InferenceError(f"Prediction output parent is not a directory: {parent}")
+    resolved = parent / candidate.name
+    if resolved.exists() or resolved.is_symlink():
+        raise InferenceError(
+            f"Prediction output already exists and will not be overwritten: {resolved}"
+        )
+    return resolved
+
+
+def write_predictions_csv(
+    result: PredictionResult,
+    path: str | PathLike[str],
+) -> Path:
+    """Atomically create a UTF-8 CSV containing row numbers and predictions."""
+    if not isinstance(result, PredictionResult):
+        raise InferenceError("result must be a PredictionResult.")
+    final_path = _prediction_output_path(path)
+    temporary_path = final_path.parent / f".{final_path.name}.{uuid4()}.tmp"
+    try:
+        with temporary_path.open("x", encoding="utf-8", newline="") as stream:
+            writer = csv.writer(stream, lineterminator="\n")
+            writer.writerow(("row_number", "prediction"))
+            writer.writerows(
+                (record.row_number, record.prediction) for record in result.predictions
+            )
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.link(temporary_path, final_path)
+    except FileExistsError as error:
+        raise InferenceError(
+            f"Prediction output already exists and will not be overwritten: {final_path}"
+        ) from error
+    except (OSError, csv.Error) as error:
+        raise InferenceError(
+            f"Could not atomically write prediction output: {final_path}"
+        ) from error
+    finally:
+        try:
+            temporary_path.unlink(missing_ok=True)
+        except OSError as cleanup_error:
+            raise InferenceError(
+                f"Could not clean up temporary prediction output: {temporary_path}"
+            ) from cleanup_error
+    return final_path

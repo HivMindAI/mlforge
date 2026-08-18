@@ -111,10 +111,12 @@ Import from `mlforge.inference`.
 | --- | --- |
 | `predict_frame(artifact, frame)` | Validate exact input schema and predict an in-memory batch. |
 | `predict_csv(artifact, path, *, options=None)` | Strictly load a target-free CSV and predict it. |
+| `write_predictions_csv(result, path)` | Atomically create a UTF-8 prediction CSV without overwriting. |
 | `PredictionResult`, `PredictionRecord`, `PredictionValue` | JSON-safe result, one-based row records, and scalar output type. |
 
 Prediction requires a `LoadedArtifact`, every recorded feature exactly once, and no extra columns.
-The input is safely reordered to training order after validation.
+The input is safely reordered to training order after validation. CSV output contains
+`row_number` and `prediction`; it creates missing parents and refuses existing destinations.
 
 ## Configuration and logging
 

@@ -317,6 +317,10 @@ one-based row numbers. `predict_csv` first applies the existing strict local CSV
 inventing a target column. Unknown categorical values remain supported by the fitted encoder;
 missing or extra features fail before model execution.
 
+`write_predictions_csv` is the inference output adapter. It writes the existing structured result
+without repeating model loading or prediction, creates parent directories, publishes through a
+temporary same-directory file and hard link, and refuses to overwrite an existing destination.
+
 Failures must not produce a successful run state or half-written manifest. Randomness must use
 recorded seeds. Raw datasets, secrets, fitted artifacts, and prediction data remain ignored by Git
 and are never embedded in normal logs.

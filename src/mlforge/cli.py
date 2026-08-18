@@ -17,7 +17,7 @@ from mlforge.artifacts import (
 from mlforge.config import ApplicationConfig, LogLevel
 from mlforge.datasets import CsvLoadOptions, DatasetProfile, load_csv, profile_dataset
 from mlforge.errors import ConfigurationError, MLForgeError
-from mlforge.inference import PredictionResult, predict_csv
+from mlforge.inference import PredictionResult, predict_csv, write_predictions_csv
 from mlforge.logging_config import configure_logging
 from mlforge.pipelines import (
     FeatureOverrides,
@@ -250,6 +250,12 @@ def _add_commands(parser: ArgumentParser) -> None:
         "--trust-artifact",
         action="store_true",
         help="confirm the artifact source is trusted; loading can execute Python code",
+    )
+    predict_parser.add_argument(
+        "--output",
+        type=Path,
+        metavar="PATH",
+        help="save row_number and prediction columns to a new UTF-8 CSV",
     )
     predict_parser.add_argument("--json", action="store_true", dest="as_json")
 
@@ -540,7 +546,31 @@ def _run_predict(arguments: Namespace) -> int:
         cast(Path, arguments.path),
         options=_csv_options(arguments),
     )
-    print(result.to_json() if cast(bool, arguments.as_json) else _render_predictions(result))
+    output = cast(Path | None, arguments.output)
+    as_json = cast(bool, arguments.as_json)
+    if output is None:
+        print(result.to_json() if as_json else _render_predictions(result))
+        return 0
+
+    saved_path = write_predictions_csv(result, output)
+    if as_json:
+        print(
+            json.dumps(
+                {
+                    "output_path": str(saved_path),
+                    "row_count": result.row_count,
+                    "run_id": result.run_id,
+                    "source_path": result.source_path,
+                    "target": result.target,
+                    "task": result.task,
+                },
+                allow_nan=False,
+                indent=2,
+                sort_keys=True,
+            )
+        )
+    else:
+        print(f"Saved {result.row_count} predictions to {saved_path}")
     return 0
 
 

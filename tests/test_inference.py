@@ -2,14 +2,21 @@
 
 import json
 from pathlib import Path
+from typing import cast
 
 import pandas as pd
 import pytest
 
 from mlforge.artifacts import LoadedArtifact, LocalArtifactStore
 from mlforge.datasets import load_csv, load_feature_csv
-from mlforge.errors import PredictionSchemaError
-from mlforge.inference import predict_csv, predict_frame
+from mlforge.errors import InferenceError, PredictionSchemaError
+from mlforge.inference import (
+    PredictionRecord,
+    PredictionResult,
+    predict_csv,
+    predict_frame,
+    write_predictions_csv,
+)
 from mlforge.pipelines import TaskType
 from mlforge.runs import LocalRunStore
 from mlforge.training import (
@@ -69,6 +76,158 @@ def test_csv_prediction_returns_source_and_json_safe_records(tmp_path: Path) -> 
     assert result.row_count == 2
     assert all(isinstance(record.prediction, str) for record in result.predictions)
     assert json.loads(result.to_json())["predictions"][0]["row_number"] == 1
+
+
+def test_prediction_csv_output_is_atomic_structured_and_creates_parents(tmp_path: Path) -> None:
+    """CSV export should create parents and preserve stable record structure."""
+    artifact, _ = _loaded_classification_artifact(tmp_path)
+    source = tmp_path / "prediction.csv"
+    source.write_text("region,amount\nwest,7\nnorth,9\n", encoding="utf-8")
+    result = predict_csv(artifact, source)
+    output = tmp_path / "nested" / "predictions.csv"
+
+    saved = write_predictions_csv(result, output)
+
+    assert saved == output.resolve()
+    frame = pd.read_csv(saved)
+    assert list(frame.columns) == ["row_number", "prediction"]
+    assert frame.to_dict(orient="records") == [record.to_dict() for record in result.predictions]
+
+
+@pytest.mark.parametrize("name", ["predictions.json", "predictions", "existing.csv"])
+def test_prediction_csv_output_rejects_invalid_or_existing_paths(
+    tmp_path: Path,
+    name: str,
+) -> None:
+    """Export must require CSV paths and never replace an existing destination."""
+    result = PredictionResult(
+        run_id="run-id",
+        task="classification",
+        target="label",
+        source_path=None,
+        predictions=(PredictionRecord(row_number=1, prediction="yes"),),
+    )
+    output = tmp_path / name
+    if name == "existing.csv":
+        output.write_text("keep me\n", encoding="utf-8")
+
+    with pytest.raises(InferenceError, match=r"\.csv extension|will not be overwritten"):
+        write_predictions_csv(result, output)
+
+    if name == "existing.csv":
+        assert output.read_text(encoding="utf-8") == "keep me\n"
+
+
+def test_prediction_csv_output_rejects_invalid_result_and_path_types(tmp_path: Path) -> None:
+    """Public export errors should stay in MLForge's actionable error hierarchy."""
+    result = PredictionResult(
+        run_id="run-id",
+        task="classification",
+        target="label",
+        source_path=None,
+        predictions=(),
+    )
+
+    with pytest.raises(InferenceError, match="PredictionResult"):
+        write_predictions_csv(cast(PredictionResult, object()), tmp_path / "predictions.csv")
+    with pytest.raises(InferenceError, match="filesystem path"):
+        write_predictions_csv(result, cast(str, None))
+
+
+def test_prediction_csv_output_rejects_invalid_parent_and_symlink_paths(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Export should reject unusable parent paths and symbolic-link destinations."""
+    result = PredictionResult(
+        run_id="run-id",
+        task="classification",
+        target="label",
+        source_path=None,
+        predictions=(),
+    )
+    parent_file = tmp_path / "not-a-directory"
+    parent_file.write_text("occupied\n", encoding="utf-8")
+    with pytest.raises(InferenceError, match="create or resolve"):
+        write_predictions_csv(result, parent_file / "predictions.csv")
+
+    def _always_symlink(_path: Path) -> bool:
+        return True
+
+    monkeypatch.setattr(Path, "is_symlink", _always_symlink)
+    with pytest.raises(InferenceError, match="symbolic link"):
+        write_predictions_csv(result, tmp_path / "symlink.csv")
+
+
+def test_prediction_csv_output_preserves_racing_destination(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A destination created concurrently must win and must never be replaced."""
+    result = PredictionResult(
+        run_id="run-id",
+        task="classification",
+        target="label",
+        source_path=None,
+        predictions=(PredictionRecord(row_number=1, prediction="yes"),),
+    )
+    output = tmp_path / "predictions.csv"
+
+    def _simulate_race(_source: Path, destination: Path) -> None:
+        destination.write_text("other process\n", encoding="utf-8")
+        raise FileExistsError
+
+    monkeypatch.setattr("mlforge.inference.os.link", _simulate_race)
+    with pytest.raises(InferenceError, match="will not be overwritten"):
+        write_predictions_csv(result, output)
+
+    assert output.read_text(encoding="utf-8") == "other process\n"
+    assert not list(tmp_path.glob(".*.tmp"))
+
+
+def test_prediction_csv_output_reports_atomic_publish_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Filesystem failures during publication should not leave temporary files behind."""
+    result = PredictionResult(
+        run_id="run-id",
+        task="classification",
+        target="label",
+        source_path=None,
+        predictions=(PredictionRecord(row_number=1, prediction="yes"),),
+    )
+    output = tmp_path / "predictions.csv"
+
+    def _deny_publish(_source: Path, _destination: Path) -> None:
+        raise PermissionError("denied")
+
+    monkeypatch.setattr("mlforge.inference.os.link", _deny_publish)
+    with pytest.raises(InferenceError, match="atomically write"):
+        write_predictions_csv(result, output)
+
+    assert not output.exists()
+    assert not list(tmp_path.glob(".*.tmp"))
+
+
+def test_large_prediction_csv_output_contains_every_record(tmp_path: Path) -> None:
+    """File output should handle batches too large for useful terminal rendering."""
+    row_count = 25_000
+    result = PredictionResult(
+        run_id="run-id",
+        task="regression",
+        target="value",
+        source_path=None,
+        predictions=tuple(
+            PredictionRecord(row_number=index, prediction=float(index) / 10)
+            for index in range(1, row_count + 1)
+        ),
+    )
+
+    output = write_predictions_csv(result, tmp_path / "large.csv")
+
+    with output.open(encoding="utf-8", newline="") as stream:
+        assert sum(1 for _ in stream) == row_count + 1
 
 
 @pytest.mark.parametrize(

@@ -63,7 +63,7 @@ def _canonical_run_id(run_id: str) -> str:
 def _current_environment() -> ArtifactEnvironment:
     return ArtifactEnvironment(
         python=sys.version.split()[0],
-        mlforge=version("mlforge"),
+        mlforge=version("hivmind-mlforge"),
         pandas=version("pandas"),
         numpy=version("numpy"),
         scipy=version("scipy"),

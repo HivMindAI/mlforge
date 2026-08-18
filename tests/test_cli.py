@@ -5,6 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 from mlforge import __version__
@@ -392,3 +393,42 @@ def test_train_artifact_inspection_and_trusted_prediction_commands(
     predictions = json.loads(capsys.readouterr().out)
     assert predictions["row_count"] == 2
     assert predictions["run_id"] == training_output["run"]["run_id"]
+
+    output_path = tmp_path / "output" / "predictions.csv"
+    assert (
+        main(
+            [
+                "predict",
+                artifact_path,
+                str(prediction_path),
+                "--trust-artifact",
+                "--output",
+                str(output_path),
+                "--json",
+            ]
+        )
+        == 0
+    )
+    saved = json.loads(capsys.readouterr().out)
+    assert saved["output_path"] == str(output_path.resolve())
+    assert saved["row_count"] == 2
+    assert "predictions" not in saved
+    assert pd.read_csv(output_path).to_dict(orient="records") == [
+        {"row_number": 1, "prediction": predictions["predictions"][0]["prediction"]},
+        {"row_number": 2, "prediction": predictions["predictions"][1]["prediction"]},
+    ]
+
+    assert (
+        main(
+            [
+                "predict",
+                artifact_path,
+                str(prediction_path),
+                "--trust-artifact",
+                "--output",
+                str(output_path),
+            ]
+        )
+        == 1
+    )
+    assert "will not be overwritten" in capsys.readouterr().err

@@ -3,7 +3,7 @@ requires = ["setuptools>=77.0.3"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "mlforge"
+name = "hivmind-mlforge"
 dynamic = ["version"]
 description = "A local toolkit for reproducible tabular supervised machine-learning workflows."
 readme = "README.md"

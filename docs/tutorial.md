@@ -6,7 +6,9 @@ schema-validated predictions.
 
 ## 1. Install a development checkout
 
-MLForge needs Python 3.11 or newer. From a clone:
+MLForge needs Python 3.11 or newer. Users of a published release install the distribution with
+`python -m pip install hivmind-mlforge`; both `import mlforge` and the `mlforge` command keep the
+short project name. From a development clone:
 
 ```powershell
 python -m venv .venv
@@ -75,6 +77,16 @@ The bundled prediction CSV contains the four feature columns and no target:
 mlforge predict artifacts/RUN_ID.mlforge examples/prediction_customers.csv --trust-artifact --json
 ```
 
+For larger batches, write only the compact save summary to the terminal and place prediction rows
+in a new UTF-8 CSV:
+
+```powershell
+mlforge predict artifacts/RUN_ID.mlforge examples/prediction_customers.csv --trust-artifact --output predictions.csv
+```
+
+The file contains `row_number` and `prediction` columns. Missing parent directories are created;
+an existing output is never overwritten.
+
 The trust flag is required because the artifact contains pickle data. Use it only for an artifact
 whose source and custody you have verified. MLForge then requires the exact recorded environment,
 checks every feature name and role, restores training column order, and emits one-based JSON-safe
@@ -89,7 +101,7 @@ from pathlib import Path
 
 from mlforge.artifacts import LocalArtifactStore
 from mlforge.datasets import load_csv
-from mlforge.inference import predict_csv
+from mlforge.inference import predict_csv, write_predictions_csv
 from mlforge.pipelines import TaskType
 from mlforge.runs import LocalRunStore
 from mlforge.training import LOGISTIC_REGRESSION, TrainingConfig, train
@@ -112,7 +124,7 @@ print(saved.manifest.to_json())
 # Pickle loading executes code. This assertion is appropriate only for a verified source.
 artifact = artifact_store.load(result.manifest.run_id, trusted=True)
 predictions = predict_csv(artifact, Path("examples/prediction_customers.csv"))
-print(predictions.to_json())
+write_predictions_csv(predictions, Path("predictions.csv"))
 ```
 
 `result.pipeline` is already fitted. Artifact saving is a separate explicit operation in the

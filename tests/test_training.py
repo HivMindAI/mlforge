@@ -13,6 +13,7 @@ from mlforge.errors import ConfigurationError, TrainingError, TrainingFailedErro
 from mlforge.pipelines import SplitConfig, TaskType
 from mlforge.runs import LocalRunStore, RunStatus
 from mlforge.training import (
+    DUMMY_CLASSIFIER,
     LOGISTIC_REGRESSION,
     RANDOM_FOREST_CLASSIFIER,
     RANDOM_FOREST_REGRESSOR,
@@ -50,15 +51,42 @@ def _regression_dataset(tmp_path: Path) -> LoadedDataset:
     [
         (
             TaskType.CLASSIFICATION,
+            DUMMY_CLASSIFIER,
+            _classification_dataset,
+            {
+                "accuracy",
+                "balanced_accuracy",
+                "f1_macro",
+                "f1_weighted",
+                "precision_macro",
+                "recall_macro",
+            },
+        ),
+        (
+            TaskType.CLASSIFICATION,
             LOGISTIC_REGRESSION,
             _classification_dataset,
-            {"accuracy", "balanced_accuracy", "f1_weighted"},
+            {
+                "accuracy",
+                "balanced_accuracy",
+                "f1_macro",
+                "f1_weighted",
+                "precision_macro",
+                "recall_macro",
+            },
         ),
         (
             TaskType.CLASSIFICATION,
             RANDOM_FOREST_CLASSIFIER,
             _classification_dataset,
-            {"accuracy", "balanced_accuracy", "f1_weighted"},
+            {
+                "accuracy",
+                "balanced_accuracy",
+                "f1_macro",
+                "f1_weighted",
+                "precision_macro",
+                "recall_macro",
+            },
         ),
         (
             TaskType.REGRESSION,
@@ -144,7 +172,10 @@ def test_metric_values_match_known_classification_and_regression_examples() -> N
     regression_values = {metric.name: metric.value for metric in regression}
     assert classification_values["accuracy"] == 0.75
     assert classification_values["balanced_accuracy"] == 0.75
+    assert classification_values["f1_macro"] == pytest.approx(0.7333333333)
     assert classification_values["f1_weighted"] == pytest.approx(0.7333333333)
+    assert classification_values["precision_macro"] == pytest.approx(0.8333333333)
+    assert classification_values["recall_macro"] == 0.75
     assert regression_values["mean_absolute_error"] == pytest.approx(2 / 3)
     assert regression_values["root_mean_squared_error"] == pytest.approx(math.sqrt(4 / 3))
     assert regression_values["r2"] == -1.0

@@ -8,7 +8,14 @@ import pytest
 
 from mlforge.datasets import load_csv
 from mlforge.errors import ConfigurationError, DatasetSplitError, DatasetValidationError
-from mlforge.pipelines import SplitConfig, TaskType, split_dataset
+from mlforge.pipelines import (
+    CrossValidationSplitConfig,
+    SplitConfig,
+    TaskType,
+    split_classification_folds,
+    split_dataset,
+    split_partition_sha256,
+)
 
 
 def _write_dataset(tmp_path: Path, rows: list[str], *, header: str = "value,target") -> Path:
@@ -210,3 +217,67 @@ def test_duplicate_target_shape_is_rejected_as_corrupt_loaded_data(tmp_path: Pat
 
     with pytest.raises(DatasetValidationError, match="validated metadata"):
         split_dataset(dataset, task=TaskType.CLASSIFICATION)
+
+
+def test_classification_folds_are_deterministic_disjoint_and_exhaustive(
+    tmp_path: Path,
+) -> None:
+    """Every source row should validate once under a reproducible shared fold plan."""
+    rows = [f"{index},{('a', 'b', 'c')[index % 3]}" for index in range(30)]
+    dataset = load_csv(_write_dataset(tmp_path, rows), target="target")
+    config = CrossValidationSplitConfig(fold_count=5, random_seed=17)
+
+    first = split_classification_folds(dataset, config=config)
+    second = split_classification_folds(dataset, config=config)
+
+    assert len(first) == 5
+    assert tuple(map(split_partition_sha256, first)) == tuple(map(split_partition_sha256, second))
+    validation_indices: list[int] = []
+    for split in first:
+        assert set(split.train_features.index).isdisjoint(split.validation_features.index)
+        assert set(split.train_features.index) | set(split.validation_features.index) == set(
+            dataset.frame.index
+        )
+        assert split.train_target.index.equals(split.train_features.index)
+        assert split.validation_target.index.equals(split.validation_features.index)
+        assert "target" not in split.train_features
+        assert split.stratified is True
+        assert split.validation_target.value_counts().to_dict() == {"a": 2, "b": 2, "c": 2}
+        validation_indices.extend(split.validation_features.index.tolist())
+    assert sorted(validation_indices) == dataset.frame.index.tolist()
+
+
+@pytest.mark.parametrize(
+    "config_factory",
+    [
+        lambda: CrossValidationSplitConfig(fold_count=1),
+        lambda: CrossValidationSplitConfig(fold_count=11),
+        lambda: CrossValidationSplitConfig(fold_count=True),
+        lambda: CrossValidationSplitConfig(random_seed=True),
+        lambda: CrossValidationSplitConfig(random_seed=-1),
+        lambda: CrossValidationSplitConfig(random_seed=2**32),
+    ],
+)
+def test_invalid_cross_validation_configuration_is_rejected(
+    config_factory: Callable[[], CrossValidationSplitConfig],
+) -> None:
+    """Fold plans should reject ambiguous counts and invalid random seeds early."""
+    with pytest.raises(ConfigurationError):
+        config_factory()
+
+
+def test_classification_folds_require_each_class_in_every_fold(tmp_path: Path) -> None:
+    """The requested fold count cannot exceed the smallest class population."""
+    dataset = load_csv(
+        _write_dataset(
+            tmp_path,
+            ["1,a", "2,a", "3,a", "4,a", "5,b", "6,b", "7,b"],
+        ),
+        target="target",
+    )
+
+    with pytest.raises(DatasetSplitError, match="one row per fold"):
+        split_classification_folds(
+            dataset,
+            config=CrossValidationSplitConfig(fold_count=4),
+        )

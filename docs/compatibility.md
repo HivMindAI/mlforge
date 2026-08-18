@@ -27,6 +27,7 @@ in [API reference](api.md):
 
 - `mlforge`
 - `mlforge.artifacts`
+- `mlforge.benchmarks`
 - `mlforge.config`
 - `mlforge.datasets`
 - `mlforge.errors`
@@ -58,11 +59,14 @@ make accidental additions and removals visible.
 Dropping a verified Python version or narrowing a dependency range requires an announced
 compatibility change. Support claims are updated only after the corresponding CI job passes.
 
-## Serialized runs and artifacts
+## Serialized runs, benchmarks, cross-validation benchmarks, and artifacts
 
-Run manifests and artifact manifests have independent integer schema versions. Readers validate
-the complete schema and reject unsupported versions rather than guessing how to migrate them.
-Adding or changing a required field therefore requires a schema-version decision and fixture tests.
+Run, holdout-benchmark, cross-validation-benchmark, and artifact manifests have independent
+integer schema versions. Readers validate the complete schema and reject unsupported versions
+rather than guessing how to migrate them. Adding or changing a required field therefore requires
+a schema-version decision and fixture tests. Cross-validation records are intentionally separate
+from ordinary run manifests because one estimator outcome contains several fitted folds rather
+than one fitted holdout pipeline.
 
 Model artifacts have a deliberately narrower boundary than the Python API. Trusted loading
 requires exact Python, MLForge, pandas, NumPy, SciPy, and scikit-learn versions recorded at training

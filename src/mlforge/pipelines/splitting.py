@@ -2,16 +2,23 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import math
 from typing import Any, cast
 
 import pandas as pd
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import StratifiedKFold, train_test_split
 
 from mlforge.datasets import LoadedDataset
 from mlforge.datasets.validation import validate_loaded_dataset
 from mlforge.errors import DatasetSplitError
-from mlforge.pipelines.types import DatasetSplit, SplitConfig, TaskType
+from mlforge.pipelines.types import (
+    CrossValidationSplitConfig,
+    DatasetSplit,
+    SplitConfig,
+    TaskType,
+)
 
 
 def _validate_target(target: pd.Series[Any], task: TaskType) -> None:
@@ -139,3 +146,97 @@ def split_dataset(
         config=effective_config,
         stratified=stratified,
     )
+
+
+def split_partition_sha256(split: DatasetSplit) -> str:
+    """Fingerprint the exact source-row membership of a supervised partition."""
+    if not isinstance(split, DatasetSplit):
+        raise DatasetSplitError("Partition fingerprinting requires a DatasetSplit value.")
+    partitions: dict[str, list[int]] = {}
+    for name, index in (
+        ("train", split.train_features.index),
+        ("validation", split.validation_features.index),
+    ):
+        values = index.tolist()
+        if any(isinstance(value, bool) or not isinstance(value, int) for value in values):
+            raise DatasetSplitError(
+                "Partition fingerprinting requires integer source-row indices from CSV ingestion."
+            )
+        partitions[name] = values
+    content = json.dumps(
+        partitions,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(content).hexdigest()
+
+
+def split_classification_folds(
+    dataset: LoadedDataset,
+    *,
+    config: CrossValidationSplitConfig | None = None,
+) -> tuple[DatasetSplit, ...]:
+    """Create shared deterministic stratified folds without fitting any transformations."""
+    validate_loaded_dataset(dataset, operation="cross-validation splitting")
+    effective_config = config or CrossValidationSplitConfig()
+    if not isinstance(effective_config, CrossValidationSplitConfig):
+        raise DatasetSplitError(
+            "Cross-validation config must be a CrossValidationSplitConfig value."
+        )
+
+    frame = dataset.frame
+    target_name = dataset.metadata.target
+    features = frame.drop(columns=[target_name])
+    if features.shape[1] == 0:
+        raise DatasetSplitError("Cross-validation requires at least one feature column.")
+    if len(frame) < effective_config.fold_count:
+        raise DatasetSplitError(
+            "Cross-validation requires at least as many rows as folds. Add data or reduce folds."
+        )
+    target = frame[target_name]
+    if not isinstance(target, pd.Series):
+        raise DatasetSplitError("The configured target must resolve to exactly one column.")
+    _validate_target(target, TaskType.CLASSIFICATION)
+    minimum_class_count = int(target.value_counts(dropna=False).min())
+    if minimum_class_count < effective_config.fold_count:
+        raise DatasetSplitError(
+            "Stratified cross-validation requires at least one row per fold in every target "
+            f"class; the smallest class has {minimum_class_count} rows for "
+            f"{effective_config.fold_count} folds. Add data or reduce folds."
+        )
+
+    splitter = StratifiedKFold(
+        n_splits=effective_config.fold_count,
+        shuffle=True,
+        random_state=effective_config.random_seed,
+    )
+    folds: list[DatasetSplit] = []
+    try:
+        raw_folds = splitter.split(features, target)
+        for train_positions, validation_positions in raw_folds:
+            train_features = features.iloc[train_positions].copy()
+            validation_features = features.iloc[validation_positions].copy()
+            train_target = target.iloc[train_positions].copy()
+            validation_target = target.iloc[validation_positions].copy()
+            folds.append(
+                DatasetSplit(
+                    train_features=train_features,
+                    validation_features=validation_features,
+                    train_target=train_target,
+                    validation_target=validation_target,
+                    target_name=target_name,
+                    task=TaskType.CLASSIFICATION,
+                    config=SplitConfig(
+                        validation_fraction=len(validation_positions) / len(frame),
+                        random_seed=effective_config.random_seed,
+                        stratify=True,
+                    ),
+                    stratified=True,
+                )
+            )
+    except ValueError as error:
+        raise DatasetSplitError(
+            f"Could not create the requested cross-validation folds: {error}"
+        ) from error
+    return tuple(folds)

@@ -3,10 +3,12 @@
 MLForge is a pre-alpha Python toolkit being built for reproducible tabular supervised
 machine-learning workflows.
 
-> **Current status:** the local workflow now covers validated CSV ingestion, profiling,
-> deterministic splitting, leakage-safe preprocessing, baseline training, held-out evaluation, and
-> immutable JSON run records, versioned trusted-local model artifacts, and schema-validated batch
-> inference.
+> **Current release:** MLForge 0.2.0 is the local benchmarking release through Milestone
+> 8. It covers validated CSV ingestion, profiling, deterministic splitting, leakage-safe
+> preprocessing, baseline training, held-out evaluation, immutable JSON run records, holdout and
+> cross-validated classification benchmarking, versioned trusted-local model artifacts, and
+> schema-validated batch inference. Milestone 9 service infrastructure remains future and
+> conditional work.
 
 ## Why MLForge
 
@@ -33,8 +35,10 @@ CSV dataset -> validation and profile -> split and preprocessing -> training and
 | Validated local CSV ingestion and deterministic profiling | Implemented |
 | Deterministic train/validation splitting | Implemented |
 | Unfitted numeric/categorical preprocessing pipelines | Implemented |
-| Four local baseline estimators and held-out evaluation | Implemented |
+| Five local baseline estimators and held-out evaluation | Implemented |
 | Versioned, immutable local run manifests and fair comparison | Implemented |
+| Three-model local classification benchmark and immutable leaderboard | Implemented |
+| Shared stratified K-fold classification benchmark with fold aggregates | Implemented |
 | Trusted-local model artifacts and schema-validated batch inference | Implemented |
 | Database, API, workers, web UI, deployment, and monitoring | Deferred and conditional |
 
@@ -82,26 +86,69 @@ On macOS or Linux, activate the environment with `source .venv/bin/activate` ins
 
 ## Quick start
 
-Profile the bundled example dataset, then train a classification baseline and save its artifact:
+The wheel intentionally contains no example datasets. To follow this workflow without cloning the
+repository, create `customer_churn.csv` in your working directory with:
+
+```csv
+age,monthly_spend,region,churn
+24,42.50,north,no
+31,68.20,south,no
+45,95.10,east,yes
+28,51.00,west,no
+52,110.75,north,yes
+39,,south,no
+34,73.40,east,no
+61,125.00,west,yes
+```
+
+Then profile it, train a classification baseline, save its artifact, and compare the supported
+classifiers:
 
 ```powershell
 mlforge --help
 mlforge --version
-mlforge dataset profile examples/customer_churn.csv --target churn
-mlforge dataset profile examples/customer_churn.csv --target churn --json
-mlforge train examples/customer_churn.csv --target churn `
+mlforge dataset profile customer_churn.csv --target churn
+mlforge dataset profile customer_churn.csv --target churn --json
+mlforge train customer_churn.csv --target churn `
   --task classification --estimator logistic-regression `
   --runs-dir mlruns --artifacts-dir artifacts --json
+mlforge benchmark customer_churn.csv --target churn `
+  --metric balanced_accuracy --runs-dir mlruns --benchmarks-dir mlbenchmarks
+mlforge benchmark customer_churn.csv --target churn `
+  --metric balanced_accuracy --cross-validation-folds 3 --benchmarks-dir mlbenchmarks
 mlforge runs list --runs-dir mlruns
 ```
 
+The benchmark trains a dummy majority-class baseline, logistic regression, and random forest on
+the same deterministic holdout partition. It ranks successful runs by the declared metric, reports
+observed duration and failures, and stores a create-only aggregate manifest in `mlbenchmarks/`.
+This is evidence about one shared holdout evaluation, not a claim that one algorithm is universally
+best. Repeat `--estimator NAME` at least twice to choose a supported subset.
+
+Add `--cross-validation-folds N` (2-10) to use one deterministic stratified fold plan for every
+estimator. Each row is used for validation once, while preprocessing and a fresh estimator clone
+are fitted only on that fold's training rows. The separate manifest in
+`mlbenchmarks/cross-validation/` records each fold score plus the population mean and standard
+deviation for every metric. Ranking uses the primary-metric mean, then lower variability and the
+estimator identifier for deterministic ties. This is model-selection evidence: it neither fits a
+final deployment model nor provides a nested-tuning performance estimate. The record is
+self-contained, so cross-validation mode does not create ordinary `mlruns/` manifests and rejects
+the holdout-only `--runs-dir` option.
+
 The JSON result identifies the run UUID. The artifact is `artifacts/RUN_ID.mlforge`. Verify its
 strict manifest and payload checksum without loading executable model bytes, then predict a
-target-free CSV only after making an explicit source-trust decision:
+target-free CSV only after making an explicit source-trust decision. Create
+`prediction_customers.csv` with:
+
+```csv
+age,monthly_spend,region
+28,19.0,north
+53,85.0,central
+```
 
 ```powershell
 mlforge artifacts inspect artifacts/RUN_ID.mlforge --json
-mlforge predict artifacts/RUN_ID.mlforge examples/prediction_customers.csv `
+mlforge predict artifacts/RUN_ID.mlforge prediction_customers.csv `
   --trust-artifact --output predictions.csv
 ```
 
@@ -109,8 +156,9 @@ The output CSV contains `row_number` and `prediction` columns. MLForge creates m
 directories but refuses to overwrite an existing output. Omit `--output` to retain the existing
 terminal output; add `--json` for structured terminal output.
 
-Every command supports normal `--help`. Add `--json` to `train`, `runs list`, or `runs show` for
-machine-readable output. A run ID from the training output can be inspected with:
+Every command supports normal `--help`. The data-profile, training, benchmark, run-inspection,
+artifact-inspection, and prediction commands support `--json` for machine-readable output. A run
+ID from the training output can be inspected with:
 
 ```powershell
 mlforge runs show RUN_ID --runs-dir mlruns
@@ -135,7 +183,7 @@ from mlforge.pipelines import TaskType
 from mlforge.runs import LocalRunStore
 from mlforge.training import LOGISTIC_REGRESSION, TrainingConfig, train
 
-dataset = load_csv(Path("examples/customer_churn.csv"), target="churn")
+dataset = load_csv(Path("customer_churn.csv"), target="churn")
 config = TrainingConfig(
     task=TaskType.CLASSIFICATION,
     estimator=LOGISTIC_REGRESSION,
@@ -150,9 +198,49 @@ saved = artifact_store.save(result)
 trusted_artifact = artifact_store.load(result.manifest.run_id, trusted=True)
 predictions = predict_csv(
     trusted_artifact,
-    Path("examples/prediction_customers.csv"),
+    Path("prediction_customers.csv"),
 )
 write_predictions_csv(predictions, Path("predictions.csv"))
+```
+
+The local benchmark API retains every underlying run and returns the fitted winning pipeline:
+
+```python
+from pathlib import Path
+
+from mlforge.benchmarks import BenchmarkConfig, LocalBenchmarkStore, benchmark
+from mlforge.datasets import load_csv
+from mlforge.runs import LocalRunStore
+
+dataset = load_csv(Path("customer_churn.csv"), target="churn")
+benchmark_result = benchmark(
+    dataset,
+    BenchmarkConfig(primary_metric="balanced_accuracy"),
+    run_store=LocalRunStore(Path("mlruns")),
+    benchmark_store=LocalBenchmarkStore(Path("mlbenchmarks")),
+)
+print(benchmark_result.manifest.to_json())
+winning_pipeline = benchmark_result.winner.pipeline
+```
+
+The cross-validation API intentionally returns selection evidence rather than a fitted winner:
+
+```python
+from mlforge.benchmarks import (
+    CrossValidationConfig,
+    LocalCrossValidationStore,
+    cross_validate_benchmark,
+)
+from mlforge.pipelines import CrossValidationSplitConfig
+
+cross_validation_result = cross_validate_benchmark(
+    dataset,
+    CrossValidationConfig(
+        split=CrossValidationSplitConfig(fold_count=5, random_seed=42),
+    ),
+    store=LocalCrossValidationStore(Path("mlbenchmarks/cross-validation")),
+)
+print(cross_validation_result.manifest.to_json())
 ```
 
 The returned `result.pipeline` is the fitted preprocessing-and-model pipeline. The lower-level
@@ -189,19 +277,22 @@ seen during validation or prediction. Feature roles come from training pandas dt
 `FeatureOverrides` for ambiguous columns such as an all-missing categorical field; MLForge does not
 guess datetime feature engineering or coerce arbitrary text into numbers.
 
-Run the preprocessing-only and complete training examples with:
+From a source checkout, run the bundled workflow examples with:
 
 ```powershell
 python examples/preprocess_dataset.py
 python examples/train_customer_churn.py
+python examples/benchmark_customer_churn.py
+python examples/cross_validate_customer_churn.py
 python examples/train_and_predict.py
 ```
 
-Supported classification estimators are logistic regression and random forest classifier;
-supported regression estimators are ridge regression and random forest regressor. Classification
-runs record accuracy, balanced accuracy, and weighted F1. Regression runs record mean absolute
-error, R-squared, and root mean squared error. Randomized estimators and splits use the configured
-seed; random forests use one process to avoid execution-policy-dependent parallel behavior.
+Supported classification estimators are a dummy prior baseline, logistic regression, and random
+forest classifier; supported regression estimators are ridge regression and random forest
+regressor. Classification runs record accuracy, balanced accuracy, macro and weighted F1, macro
+precision, and macro recall. Regression runs record mean absolute error, R-squared, and root mean
+squared error. Randomized estimators and splits use the configured seed; random forests use one
+process to avoid execution-policy-dependent parallel behavior.
 
 Run manifests use a strict versioned JSON schema and contain the effective estimator and
 preprocessing parameters, CSV parser choices, source-file SHA-256, dimensions, exact split
@@ -300,6 +391,7 @@ mlforge/
 |- .github/workflows/    # Automated quality checks and trusted release publishing
 |- examples/             # Runnable profiling, training, artifact, and inference examples
 |- src/mlforge/          # Importable production package
+|  `- benchmarks/        # Local multi-run classification benchmark orchestration
 |- tests/                # Unit and integration tests
 |- scripts/              # Installed-wheel verification scripts
 |- docs/api.md           # Supported Python API contract

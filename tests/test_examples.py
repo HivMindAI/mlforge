@@ -62,8 +62,54 @@ def test_train_customer_churn_example() -> None:
     assert {metric["name"] for metric in manifest["metrics"]} == {
         "accuracy",
         "balanced_accuracy",
+        "f1_macro",
         "f1_weighted",
+        "precision_macro",
+        "recall_macro",
     }
+
+
+def test_benchmark_customer_churn_example() -> None:
+    """The benchmark example should emit three fair terminal classifier outcomes."""
+    repository_root = Path(__file__).resolve().parents[1]
+    completed = subprocess.run(
+        [sys.executable, repository_root / "examples" / "benchmark_customer_churn.py"],
+        cwd=repository_root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    manifest = json.loads(completed.stdout)
+    assert manifest["status"] == "succeeded"
+    assert manifest["configuration"]["primary_metric"] == "balanced_accuracy"
+    assert {entry["estimator"] for entry in manifest["entries"]} == {
+        "dummy-classifier",
+        "logistic-regression",
+        "random-forest-classifier",
+    }
+    assert {entry["rank"] for entry in manifest["entries"]} == {1, 2, 3}
+
+
+def test_cross_validate_customer_churn_example() -> None:
+    """The cross-validation example should report fold-level aggregate evidence."""
+    repository_root = Path(__file__).resolve().parents[1]
+    completed = subprocess.run(
+        [sys.executable, repository_root / "examples" / "cross_validate_customer_churn.py"],
+        cwd=repository_root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    manifest = json.loads(completed.stdout)
+    assert manifest["status"] == "succeeded"
+    assert manifest["configuration"]["fold_count"] == 3
+    assert len(manifest["folds"]) == 3
+    assert {entry["rank"] for entry in manifest["entries"]} == {1, 2, 3}
+    assert all(len(entry["folds"]) == 3 for entry in manifest["entries"])
 
 
 def test_train_and_predict_example() -> None:

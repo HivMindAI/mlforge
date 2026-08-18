@@ -18,6 +18,24 @@ not download data and do not redistribute dataset files in the MLForge wheel or 
 The derived categorical columns and missing values are deterministic test transformations used to
 exercise supported input behavior.
 
+## v0.2.0 benchmark release-candidate matrix
+
+The v0.2.0 Milestone 7-8 release-candidate review also ran the installed wheel, outside the source
+tree, against three materially different scikit-learn classification datasets. Every estimator
+completed every shared three-fold partition, each immutable manifest survived strict readback, and
+the Iris workflow produced identical fold fingerprints, ranks, parameters, and metric evidence
+when repeated with the same seed.
+
+| Dataset | Rows | Features | Input characteristics | Winning default estimator |
+| --- | ---: | ---: | --- | --- |
+| Iris | 150 | 4 | Numeric, three classes | Logistic regression |
+| Wine | 178 | 14 | Numeric plus a derived categorical band, three classes | Logistic regression |
+| Wisconsin diagnostic breast cancer | 569 | 31 | Binary imbalance, derived categorical band, 59 injected missing cells | Logistic regression |
+
+These checks use deterministic local transformations and do not download or redistribute the
+datasets. The observed winners are validation evidence for these specific partitions, not a claim
+that one estimator is universally best.
+
 ## Large output
 
 The prediction-output test writes and verifies 25,000 structured prediction rows. This validates
@@ -26,8 +44,9 @@ CSVs, run records, and model artifacts remain temporary or ignored.
 
 ## Clean package workflow
 
-Before a release, build the wheel and source archive, install the wheel into a newly created
-environment outside the source tree, run `pip check`, and execute `scripts/wheel_smoke.py` from a
-different working directory. The smoke script validates package metadata, `import mlforge`, the
-`mlforge` module entrypoint, profiling, training, artifact persistence and inspection, explicit
-trusted loading, and prediction without relying on repository imports.
+Before a release, build the wheel and source archive, install each archive into its own newly
+created environment outside the source tree, run `pip check`, and execute `scripts/wheel_smoke.py`
+without relying on repository package imports. The smoke script validates package metadata,
+`import mlforge`, the `mlforge` module entrypoint, validated ingestion, training, artifact
+persistence and inspection, explicit trusted loading, prediction, holdout benchmarking,
+cross-validated benchmarking, ranking, immutable manifest persistence, and strict readback.

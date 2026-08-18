@@ -50,6 +50,26 @@ class SplitConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class CrossValidationSplitConfig:
+    """Resource-bounded deterministic stratified K-fold settings."""
+
+    fold_count: int = 5
+    random_seed: int = 42
+
+    def __post_init__(self) -> None:
+        if isinstance(self.fold_count, bool) or not isinstance(self.fold_count, int):
+            raise ConfigurationError("Cross-validation fold count must be an integer.")
+        if not 2 <= self.fold_count <= 10:
+            raise ConfigurationError("Cross-validation fold count must be between 2 and 10.")
+        if isinstance(self.random_seed, bool) or not isinstance(self.random_seed, int):
+            raise ConfigurationError("Cross-validation random seed must be an integer.")
+        if not 0 <= self.random_seed <= 2**32 - 1:
+            raise ConfigurationError(
+                "Cross-validation random seed must be between 0 and 4294967295."
+            )
+
+
+@dataclass(frozen=True, slots=True)
 class FeatureOverrides:
     """Explicit roles for columns whose pandas dtype is ambiguous."""
 

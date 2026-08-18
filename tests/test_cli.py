@@ -190,9 +190,239 @@ def test_train_json_command_creates_a_successful_manifest(
     assert {metric["name"] for metric in manifest["metrics"]} == {
         "accuracy",
         "balanced_accuracy",
+        "f1_macro",
         "f1_weighted",
+        "precision_macro",
+        "recall_macro",
     }
     assert (runs_directory / f"{manifest['run_id']}.json").is_file()
+
+
+def test_benchmark_json_command_creates_fair_runs_and_leaderboard(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One CLI command should run and record the default classification benchmark."""
+    path = _write_training_csv(tmp_path / "training.csv")
+    runs_directory = tmp_path / "runs"
+    benchmarks_directory = tmp_path / "benchmarks"
+    monkeypatch.delenv(LOG_LEVEL_ENVIRONMENT_VARIABLE, raising=False)
+    monkeypatch.setattr("mlforge.cli.configure_logging", lambda level: None)
+
+    exit_code = main(
+        [
+            "benchmark",
+            str(path),
+            "--target",
+            "target",
+            "--metric",
+            "f1_macro",
+            "--runs-dir",
+            str(runs_directory),
+            "--benchmarks-dir",
+            str(benchmarks_directory),
+            "--json",
+        ]
+    )
+
+    assert exit_code == 0
+    manifest = json.loads(capsys.readouterr().out)
+    assert manifest["status"] == "succeeded"
+    assert manifest["configuration"]["task"] == "classification"
+    assert manifest["configuration"]["primary_metric"] == "f1_macro"
+    assert {entry["estimator"] for entry in manifest["entries"]} == {
+        "dummy-classifier",
+        "logistic-regression",
+        "random-forest-classifier",
+    }
+    assert {entry["rank"] for entry in manifest["entries"]} == {1, 2, 3}
+    assert len(list(runs_directory.glob("*.json"))) == 3
+    assert (benchmarks_directory / f"{manifest['benchmark_id']}.json").is_file()
+    run_partitions = {
+        json.loads(path.read_text(encoding="utf-8"))["split"]["partition_sha256"]
+        for path in runs_directory.glob("*.json")
+    }
+    assert len(run_partitions) == 1
+
+
+def test_benchmark_human_output_states_evaluation_limit(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Human output should explain the observed winner without making a universal claim."""
+    path = _write_training_csv(tmp_path / "training.csv")
+    monkeypatch.delenv(LOG_LEVEL_ENVIRONMENT_VARIABLE, raising=False)
+    monkeypatch.setattr("mlforge.cli.configure_logging", lambda level: None)
+
+    assert (
+        main(
+            [
+                "benchmark",
+                str(path),
+                "--target",
+                "target",
+                "--estimator",
+                "dummy-classifier",
+                "--estimator",
+                "logistic-regression",
+                "--runs-dir",
+                str(tmp_path / "runs"),
+                "--benchmarks-dir",
+                str(tmp_path / "benchmarks"),
+            ]
+        )
+        == 0
+    )
+
+    output = capsys.readouterr().out
+    assert "Leaderboard:" in output
+    assert "Best observed:" in output
+    assert "one shared holdout evaluation" in output
+    assert "not a universally best model" in output
+
+
+def test_cross_validation_benchmark_json_records_fold_aggregates(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The benchmark command should expose a strict shared-fold JSON protocol."""
+    path = _write_training_csv(tmp_path / "training.csv")
+    benchmarks_directory = tmp_path / "benchmarks"
+    monkeypatch.delenv(LOG_LEVEL_ENVIRONMENT_VARIABLE, raising=False)
+    monkeypatch.setattr("mlforge.cli.configure_logging", lambda level: None)
+
+    assert (
+        main(
+            [
+                "benchmark",
+                str(path),
+                "--target",
+                "target",
+                "--estimator",
+                "dummy-classifier",
+                "--estimator",
+                "logistic-regression",
+                "--cross-validation-folds",
+                "4",
+                "--benchmarks-dir",
+                str(benchmarks_directory),
+                "--json",
+            ]
+        )
+        == 0
+    )
+
+    manifest = json.loads(capsys.readouterr().out)
+    assert manifest["status"] == "succeeded"
+    assert manifest["configuration"]["fold_count"] == 4
+    assert len(manifest["folds"]) == 4
+    assert {entry["rank"] for entry in manifest["entries"]} == {1, 2}
+    assert all(len(metric["fold_values"]) == 4 for metric in manifest["entries"][0]["metrics"])
+    assert (
+        benchmarks_directory / "cross-validation" / f"{manifest['benchmark_id']}.json"
+    ).is_file()
+
+
+def test_cross_validation_benchmark_human_output_explains_selection_limit(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Human output should report variability and avoid deployment-readiness claims."""
+    path = _write_training_csv(tmp_path / "training.csv")
+    monkeypatch.delenv(LOG_LEVEL_ENVIRONMENT_VARIABLE, raising=False)
+    monkeypatch.setattr("mlforge.cli.configure_logging", lambda level: None)
+
+    assert (
+        main(
+            [
+                "benchmark",
+                str(path),
+                "--target",
+                "target",
+                "--estimator",
+                "dummy-classifier",
+                "--estimator",
+                "logistic-regression",
+                "--cross-validation-folds",
+                "4",
+                "--benchmarks-dir",
+                str(tmp_path / "benchmarks"),
+            ]
+        )
+        == 0
+    )
+
+    output = capsys.readouterr().out
+    assert "4-fold stratified cross-validation" in output
+    assert "±" in output
+    assert "does not fit a final deployment model" in output
+    assert "nested-tuning estimate" in output
+
+
+@pytest.mark.parametrize(
+    "conflicting_options",
+    [
+        ["--validation-fraction", "0.25"],
+        ["--no-stratify"],
+    ],
+)
+def test_cross_validation_rejects_conflicting_split_options(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    conflicting_options: list[str],
+) -> None:
+    """Cross-validation must not silently ignore holdout-specific CLI choices."""
+    path = _write_training_csv(tmp_path / "training.csv")
+    monkeypatch.delenv(LOG_LEVEL_ENVIRONMENT_VARIABLE, raising=False)
+    monkeypatch.setattr("mlforge.cli.configure_logging", lambda level: None)
+
+    exit_code = main(
+        [
+            "benchmark",
+            str(path),
+            "--target",
+            "target",
+            "--cross-validation-folds",
+            "4",
+            *conflicting_options,
+        ]
+    )
+
+    assert exit_code == 1
+    assert "cannot be combined" in capsys.readouterr().err
+
+
+def test_cross_validation_rejects_holdout_run_storage_option(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The CLI should not silently ignore ordinary per-run storage in fold mode."""
+    path = _write_training_csv(tmp_path / "training.csv")
+    monkeypatch.delenv(LOG_LEVEL_ENVIRONMENT_VARIABLE, raising=False)
+    monkeypatch.setattr("mlforge.cli.configure_logging", lambda level: None)
+
+    exit_code = main(
+        [
+            "benchmark",
+            str(path),
+            "--target",
+            "target",
+            "--cross-validation-folds",
+            "4",
+            "--runs-dir",
+            str(tmp_path / "runs"),
+        ]
+    )
+
+    assert exit_code == 1
+    assert "self-contained aggregate manifest" in capsys.readouterr().err
+    assert not (tmp_path / "runs").exists()
 
 
 def test_runs_list_show_and_compare_commands(

@@ -144,7 +144,93 @@ Comparison rejects runs with different source bytes, target, task, validation fr
 actual stratification, or row partition. That prevents a polished ranking of metrics that were not
 measured on the same holdout.
 
-## 8. Verify the checkout
+## 8. Benchmark classification baselines
+
+Run the default local benchmark on one shared deterministic holdout:
+
+```powershell
+mlforge benchmark examples/customer_churn.csv --target churn --metric balanced_accuracy --runs-dir mlruns --benchmarks-dir mlbenchmarks
+```
+
+MLForge trains a dummy prior baseline, logistic regression, and random forest. Every estimator uses
+the same source bytes, target, preprocessing policy, seed, and validation rows. The leaderboard
+ranks successful runs by the explicit primary metric, reports observed wall-clock duration, and
+keeps estimator failures visible. The aggregate JSON manifest is stored in `mlbenchmarks/`, while
+the complete underlying run manifests remain in `mlruns/`.
+
+This fast benchmark is based on one holdout partition. “Best observed” means first for this
+dataset, metric, seed, and partition; it is not a universal claim about an algorithm.
+
+Use the same operation from Python when the fitted winning pipeline is needed:
+
+```python
+from pathlib import Path
+
+from mlforge.benchmarks import BenchmarkConfig, LocalBenchmarkStore, benchmark
+from mlforge.datasets import load_csv
+from mlforge.runs import LocalRunStore
+
+dataset = load_csv(Path("examples/customer_churn.csv"), target="churn")
+result = benchmark(
+    dataset,
+    BenchmarkConfig(primary_metric="balanced_accuracy"),
+    run_store=LocalRunStore(Path("mlruns")),
+    benchmark_store=LocalBenchmarkStore(Path("mlbenchmarks")),
+)
+winning_pipeline = result.winner.pipeline
+```
+
+## 9. Compare stability with cross-validation
+
+Use a shared deterministic stratified fold plan when one holdout is too fragile:
+
+```powershell
+mlforge benchmark examples/customer_churn.csv --target churn --metric balanced_accuracy --cross-validation-folds 3 --benchmarks-dir mlbenchmarks
+```
+
+The bundled data supports three folds because its smallest target class has three rows. For every
+estimator, MLForge clones a fresh model and fits a new preprocessing pipeline on each fold's
+training rows. The fold's validation rows never contribute imputation values, scaling state,
+categories, or estimator parameters. Every source row becomes validation data exactly once.
+
+The leaderboard displays the primary metric as mean ± population standard deviation. Its strict
+manifest in `mlbenchmarks/cross-validation/` also records all fold values for every classification
+metric, exact partition fingerprints, warnings, timing, and any failed fold. Mean determines rank;
+lower variability and then estimator name break exact mean ties deterministically.
+The aggregate is self-contained and no ordinary `mlruns/` records are produced in this mode;
+accordingly, `--runs-dir` is a holdout-only option and is rejected when folds are requested.
+
+The same protocol is importable:
+
+```python
+from pathlib import Path
+
+from mlforge.benchmarks import (
+    CrossValidationConfig,
+    LocalCrossValidationStore,
+    cross_validate_benchmark,
+)
+from mlforge.datasets import load_csv
+from mlforge.pipelines import CrossValidationSplitConfig
+
+dataset = load_csv(Path("examples/customer_churn.csv"), target="churn")
+result = cross_validate_benchmark(
+    dataset,
+    CrossValidationConfig(
+        primary_metric="balanced_accuracy",
+        split=CrossValidationSplitConfig(fold_count=3, random_seed=42),
+    ),
+    store=LocalCrossValidationStore(Path("mlbenchmarks/cross-validation")),
+)
+print(result.manifest.to_json())
+```
+
+This result selects an estimator under the declared folds. It intentionally does not return a
+fitted deployment pipeline: train the chosen estimator separately under an explicit final-model
+policy. Because the same folds informed selection, do not describe the winning cross-validation
+mean as a nested-tuning or untouched final-test estimate.
+
+## 10. Verify the checkout
 
 Run the executable examples and all contributor checks:
 
@@ -152,6 +238,8 @@ Run the executable examples and all contributor checks:
 python examples/profile_dataset.py
 python examples/preprocess_dataset.py
 python examples/train_customer_churn.py
+python examples/benchmark_customer_churn.py
+python examples/cross_validate_customer_churn.py
 python examples/train_and_predict.py
 ruff check .
 ruff format --check .
@@ -160,6 +248,6 @@ python -m pytest
 python -m build
 ```
 
-Generated `mlruns/` and `artifacts/` directories are ignored by Git. Delete them when you no longer
-need the local outputs. Continue with the [API reference](api.md) for lower-level pipeline and
-storage interfaces, and [architecture](architecture.md) for design boundaries.
+Generated `mlruns/`, `mlbenchmarks/`, and `artifacts/` directories are ignored by Git. Delete them
+when you no longer need the local outputs. Continue with the [API reference](api.md) for lower-level
+pipeline and storage interfaces, and [architecture](architecture.md) for design boundaries.

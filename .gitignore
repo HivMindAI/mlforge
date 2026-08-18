@@ -27,6 +27,7 @@ dist/
 # ML data, artifacts, and experiment outputs
 /artifacts/
 /data/
+/mlbenchmarks/
 /mlruns/
 /models/
 /checkpoints/

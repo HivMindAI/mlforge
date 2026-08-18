@@ -13,9 +13,17 @@ import pandas as pd
 
 from mlforge import __version__
 from mlforge.artifacts import LocalArtifactStore, inspect_artifact, load_artifact
+from mlforge.benchmarks import (
+    BenchmarkConfig,
+    CrossValidationConfig,
+    LocalBenchmarkStore,
+    LocalCrossValidationStore,
+    benchmark,
+    cross_validate_benchmark,
+)
 from mlforge.datasets import load_csv
 from mlforge.inference import predict_frame, write_predictions_csv
-from mlforge.pipelines import TaskType
+from mlforge.pipelines import CrossValidationSplitConfig, TaskType
 from mlforge.runs import LocalRunStore
 from mlforge.training import LOGISTIC_REGRESSION, TrainingConfig, train
 
@@ -70,15 +78,49 @@ def main() -> None:
             ),
         )
         prediction_output = write_predictions_csv(predictions, workspace / "predictions.csv")
+        benchmark_result = benchmark(
+            dataset,
+            BenchmarkConfig(),
+            run_store=LocalRunStore(workspace / "benchmark-runs"),
+            benchmark_store=LocalBenchmarkStore(workspace / "benchmarks"),
+        )
+        cross_validation_result = cross_validate_benchmark(
+            dataset,
+            CrossValidationConfig(
+                split=CrossValidationSplitConfig(fold_count=3, random_seed=42),
+            ),
+            store=LocalCrossValidationStore(workspace / "cross-validation"),
+        )
 
         assert inspected.run_id == result.manifest.run_id
         assert predictions.run_id == result.manifest.run_id
         assert predictions.row_count == 2
         assert list(pd.read_csv(prediction_output).columns) == ["row_number", "prediction"]
+        assert benchmark_result.manifest.winner is not None
+        assert benchmark_result.manifest_path.is_file()
+        assert {entry.rank for entry in benchmark_result.manifest.entries} == {1, 2, 3}
+        assert cross_validation_result.manifest.winner is not None
+        assert cross_validation_result.manifest_path.is_file()
+        assert len(cross_validation_result.manifest.folds) == 3
+        assert {entry.rank for entry in cross_validation_result.manifest.entries} == {1, 2, 3}
+        assert (
+            LocalBenchmarkStore(workspace / "benchmarks").read(
+                benchmark_result.manifest.benchmark_id
+            )
+            == benchmark_result.manifest
+        )
+        assert (
+            LocalCrossValidationStore(workspace / "cross-validation").read(
+                cross_validation_result.manifest.benchmark_id
+            )
+            == cross_validation_result.manifest
+        )
         print(
             json.dumps(
                 {
                     "artifact": str(saved.path),
+                    "benchmark_winner": benchmark_result.manifest.winner.estimator,
+                    "cross_validation_winner": (cross_validation_result.manifest.winner.estimator),
                     "prediction_output": str(prediction_output),
                     "predictions": predictions.to_dict(),
                     "version": __version__,

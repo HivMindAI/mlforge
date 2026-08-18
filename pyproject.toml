@@ -65,6 +65,7 @@ testpaths = ["tests"]
 [tool.mypy]
 python_version = "3.11"
 files = ["src", "tests"]
+exclude = ["^tmp/"]
 strict = true
 pretty = true
 show_error_codes = true

@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from sklearn.base import BaseEstimator
+from sklearn.dummy import DummyClassifier
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.linear_model import LogisticRegression, Ridge
 
 from mlforge.errors import TrainingError
 from mlforge.training.types import (
+    DUMMY_CLASSIFIER,
     LOGISTIC_REGRESSION,
     RANDOM_FOREST_CLASSIFIER,
     RANDOM_FOREST_REGRESSOR,
@@ -19,6 +21,8 @@ from mlforge.training.types import (
 def create_estimator(config: TrainingConfig) -> BaseEstimator:
     """Construct one supported estimator with deterministic resource-bounded defaults."""
     seed = config.split.random_seed
+    if config.estimator == DUMMY_CLASSIFIER:
+        return DummyClassifier(strategy="prior", random_state=seed)
     if config.estimator == LOGISTIC_REGRESSION:
         return LogisticRegression(max_iter=1_000, random_state=seed)
     if config.estimator == RANDOM_FOREST_CLASSIFIER:

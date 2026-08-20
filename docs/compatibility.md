@@ -50,8 +50,8 @@ make accidental additions and removals visible.
 ## Python and dependency support
 
 - Python 3.11 is the minimum supported interpreter.
-- CI verifies CPython 3.11 and 3.12. Newer Python versions may work but are unverified until added
-  to the CI matrix.
+- CI verifies CPython 3.11 and 3.12 on Ubuntu and CPython 3.12 on Windows. Newer Python versions may
+  work but are unverified until added to the CI matrix.
 - The package metadata permits pandas `>=3.0,<4` and scikit-learn `>=1.9,<2`.
 - Dependency updates within those ranges may affect numerical results. Reproducible run manifests
   record exact environment versions so results can be interpreted and environments reconstructed.

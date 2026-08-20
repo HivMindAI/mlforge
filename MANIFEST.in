@@ -12,5 +12,6 @@ include docs/release-validation.md
 include docs/releasing.md
 include docs/security.md
 include docs/tutorial.md
+include docs/assets/benchmark-terminal.svg
 recursive-include examples *.csv *.py
 recursive-include scripts *.py

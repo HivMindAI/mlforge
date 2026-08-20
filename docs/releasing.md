@@ -29,7 +29,8 @@ secret for this workflow.
 1. Confirm the release commit is merged to `main`, the working tree is clean, and required CI is
    green on Python 3.11 and 3.12.
 2. Confirm `mlforge.__version__`, `CHANGELOG.md`, and the intended tag agree.
-3. Run the full contributor suite and clean-wheel workflow described in
+3. Run the full contributor suite, including the enforced coverage floor and strict Twine check,
+   plus the clean-wheel workflow described in
    [release validation](release-validation.md).
 4. Create and push the annotated tag:
 

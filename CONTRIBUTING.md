@@ -1,9 +1,9 @@
 # Contributing to MLForge
 
-MLForge is pre-alpha and deliberately developed one milestone at a time. Before changing code,
-read `README.md`, `ROADMAP.md`, `docs/architecture.md`, and `AGENTS.md`. Keep each contribution
-within the active milestone and avoid adding infrastructure or abstractions for unaccepted future
-work.
+MLForge is an alpha-stage local tabular-ML toolkit developed in deliberately small milestones.
+Before changing code, read `README.md`, `ROADMAP.md`, `docs/architecture.md`, and `AGENTS.md`. Keep
+each contribution within the accepted product scope and avoid infrastructure or abstractions for
+unaccepted future work.
 
 Security vulnerabilities follow [SECURITY.md](SECURITY.md), not the normal public issue workflow.
 
@@ -34,10 +34,12 @@ ruff format --check .
 mypy src tests
 python -m pytest
 python -m build
+python -m twine check --strict dist/*
 ```
 
 If formatting fails, run `ruff format .`, then repeat the full check sequence. Do not weaken a check
-or test merely to make the suite green.
+or test merely to make the suite green. `python -m pytest` enforces the project's 80% statement
+coverage floor.
 
 ## Change guidelines
 
@@ -61,9 +63,10 @@ A reviewable pull request should explain the user or architecture problem, the c
 tests added, and the commands actually run. Keep unrelated refactoring out of the change. Do not
 claim support for behavior that is still planned.
 
-CI additionally builds the wheel, installs it into a separate virtual environment, runs
-`pip check`, and executes `scripts/wheel_smoke.py` outside the repository. This confirms that the
-distribution—not an editable source path—supports the documented local workflow.
+CI runs on Ubuntu with Python 3.11/3.12 and Windows with Python 3.12. It additionally builds the
+wheel, installs it into a separate virtual environment, runs `pip check`, and executes
+`scripts/wheel_smoke.py` outside the repository. This confirms that the distribution—not an
+editable source path—supports the documented local workflow.
 
 ## Contribution license
 

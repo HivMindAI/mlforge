@@ -5,6 +5,26 @@ All notable MLForge changes are recorded here. The project follows semantic vers
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-08-20
+
+### Changed
+
+- Redesign the README around a concise value proposition, verified quick start, real benchmark
+  output, reliability guarantees, architecture, current capabilities, and explicit limitations.
+- Add a repository-owned terminal visual based on the bundled cross-validation example and keep
+  the Python/CLI examples aligned with the public API.
+- Expand CI from Ubuntu Python 3.11/3.12 to include Windows Python 3.12, including clean built-wheel
+  smoke testing on both operating systems.
+- Enforce an 80% statement-coverage floor through the canonical pytest configuration without
+  adding coverage tooling to runtime dependencies.
+- Refresh package metadata, contributor commands, support-version language, compatibility notes,
+  and release-validation guidance for the public `0.2.x` line.
+- Keep reusable installed-wheel validation in `scripts/wheel_smoke.py`, include the repository
+  visual in source archives, and avoid one-off release tooling in the repository root.
+
+This maintenance release does not change ML behavior, serialized schemas, or public APIs. It does
+not start Milestone 9 or implement final-model fitting.
+
 ## [0.2.0] - 2026-08-18
 
 ### Added
@@ -53,6 +73,7 @@ selection evidence; it does not fit a final deployment model or provide a nested
 - Python import package: `mlforge`
 - Console command: `mlforge`
 
-[Unreleased]: https://github.com/HivMindAI/mlforge/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/HivMindAI/mlforge/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/HivMindAI/mlforge/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/HivMindAI/mlforge/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/HivMindAI/mlforge/releases/tag/v0.1.0

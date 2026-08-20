@@ -9,12 +9,21 @@ permissions:
 
 jobs:
   quality:
-    name: Python ${{ matrix.python-version }}
-    runs-on: ubuntu-latest
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12"]
+        include:
+          - os: ubuntu-latest
+            python-version: "3.11"
+            label: Python 3.11
+          - os: ubuntu-latest
+            python-version: "3.12"
+            label: Python 3.12
+          - os: windows-latest
+            python-version: "3.12"
+            label: Windows / Python 3.12
 
     steps:
       - name: Check out repository
@@ -45,7 +54,8 @@ jobs:
       - name: Build package
         run: python -m build
 
-      - name: Smoke test built wheel
+      - name: Smoke test built wheel on Linux
+        if: runner.os == 'Linux'
         shell: bash
         run: |
           python -m venv .wheel-venv
@@ -55,3 +65,17 @@ jobs:
           cd "$smoke_root"
           "$GITHUB_WORKSPACE/.wheel-venv/bin/python" \
             "$GITHUB_WORKSPACE/scripts/wheel_smoke.py"
+
+      - name: Smoke test built wheel on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          python -m venv .wheel-venv
+          $wheel = (Get-ChildItem -Path dist -Filter *.whl -File | Select-Object -First 1).FullName
+          & .\.wheel-venv\Scripts\python.exe -m pip install $wheel
+          & .\.wheel-venv\Scripts\python.exe -m pip check
+          $smokeRoot = Join-Path $env:RUNNER_TEMP "mlforge-wheel-smoke"
+          New-Item -ItemType Directory -Force -Path $smokeRoot | Out-Null
+          Set-Location $smokeRoot
+          & "$env:GITHUB_WORKSPACE\.wheel-venv\Scripts\python.exe" `
+            "$env:GITHUB_WORKSPACE\scripts\wheel_smoke.py"

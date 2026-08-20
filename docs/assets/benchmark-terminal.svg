@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="560" viewBox="0 0 1100 560" role="img" aria-labelledby="title description">
+  <title id="title">MLForge cross-validation benchmark terminal demo</title>
+  <desc id="description">A terminal-style rendering of a real three-fold benchmark over the bundled customer churn example.</desc>
+  <rect width="1100" height="560" rx="18" fill="#0d1117"/>
+  <rect width="1100" height="52" rx="18" fill="#161b22"/>
+  <rect y="34" width="1100" height="18" fill="#161b22"/>
+  <circle cx="28" cy="26" r="7" fill="#ff5f56"/>
+  <circle cx="52" cy="26" r="7" fill="#ffbd2e"/>
+  <circle cx="76" cy="26" r="7" fill="#27c93f"/>
+  <text x="550" y="32" text-anchor="middle" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, Consolas, monospace" font-size="15">mlforge — cross-validation benchmark</text>
+
+  <g font-family="ui-monospace, SFMono-Regular, Consolas, monospace" font-size="18">
+    <text x="34" y="91" fill="#7ee787">$</text>
+    <text x="56" y="91" fill="#f0f6fc">mlforge benchmark examples/customer_churn.csv --target churn</text>
+    <text x="56" y="120" fill="#f0f6fc">--metric balanced_accuracy --cross-validation-folds 3</text>
+
+    <text x="34" y="166" fill="#8b949e">Protocol:</text>
+    <text x="150" y="166" fill="#f0f6fc">3-fold stratified cross-validation (shuffle seed=42)</text>
+    <text x="34" y="197" fill="#8b949e">Metric:</text>
+    <text x="150" y="197" fill="#f0f6fc">balanced_accuracy</text>
+
+    <text x="34" y="245" fill="#58a6ff">Rank</text>
+    <text x="124" y="245" fill="#58a6ff">Estimator</text>
+    <text x="570" y="245" fill="#58a6ff">Mean</text>
+    <text x="715" y="245" fill="#58a6ff">Std. dev.</text>
+    <line x1="34" y1="258" x2="1035" y2="258" stroke="#30363d"/>
+
+    <text x="50" y="294" fill="#7ee787">1</text>
+    <text x="124" y="294" fill="#f0f6fc">logistic-regression</text>
+    <text x="570" y="294" fill="#7ee787">0.833333</text>
+    <text x="715" y="294" fill="#c9d1d9">0.236</text>
+
+    <text x="50" y="334" fill="#c9d1d9">2</text>
+    <text x="124" y="334" fill="#f0f6fc">random-forest-classifier</text>
+    <text x="570" y="334" fill="#c9d1d9">0.833333</text>
+    <text x="715" y="334" fill="#c9d1d9">0.236</text>
+
+    <text x="50" y="374" fill="#c9d1d9">3</text>
+    <text x="124" y="374" fill="#f0f6fc">dummy-classifier</text>
+    <text x="570" y="374" fill="#c9d1d9">0.500000</text>
+    <text x="715" y="374" fill="#c9d1d9">0.000</text>
+
+    <line x1="34" y1="404" x2="1035" y2="404" stroke="#30363d"/>
+    <text x="34" y="442" fill="#7ee787">Best observed mean: logistic-regression ranked first.</text>
+    <text x="34" y="484" fill="#d29922">Selection evidence only — no final deployment model is fitted.</text>
+    <text x="34" y="522" fill="#8b949e">Dataset: bundled 8-row workflow demo; IDs and timing omitted.</text>
+  </g>
+</svg>

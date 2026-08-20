@@ -6,14 +6,14 @@ public.
 
 ## Supported versions
 
-MLForge has not published a stable release yet. Security fixes are made on the latest development
-line only; old commits and locally modified copies are not supported. This table will be replaced
-with release-version ranges when the first public release exists.
+MLForge remains in the `0.y.z` development series. Security fixes are made on the latest `0.2.x`
+line; older minor lines, snapshots, and locally modified copies are not supported.
 
 | Version | Supported |
 | --- | --- |
-| Latest development line | Best effort |
-| Older snapshots | No |
+| `0.2.x` | Yes |
+| `0.1.x` | No |
+| Unreleased snapshots | Best effort |
 
 ## Reporting a vulnerability
 
@@ -33,7 +33,7 @@ data, or details that would enable abuse in that public issue.
 
 Maintainers will confirm receipt, assess scope and severity, coordinate a fix, and agree on
 disclosure timing with the reporter when contact is possible. Response and remediation times are
-not guaranteed while the project is pre-release.
+not guaranteed while the project is in its `0.y.z` development series.
 
 ## Security boundaries
 

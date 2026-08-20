@@ -3,6 +3,24 @@
 MLForge release validation is deterministic and offline. Large or third-party datasets are not
 committed to the repository or included in distributions.
 
+## Automated quality gate
+
+The default `python -m pytest` command measures the installed `mlforge` package, reports missing
+statements, and fails below 80% coverage. The threshold is intentionally below the v0.2.1
+preparation measurement of 84.66% so it prevents material regressions without encouraging tests
+that merely chase lines.
+
+GitHub Actions runs Ruff linting, Ruff formatting checks, strict mypy, pytest with the coverage
+floor, package builds, `pip check`, and the installed-wheel smoke workflow on this matrix:
+
+| Operating system | Python |
+| --- | --- |
+| Ubuntu | 3.11, 3.12 |
+| Windows | 3.12 |
+
+The release workflow independently rebuilds and validates distributions from the published tag
+before the protected PyPI deployment.
+
 ## Real datasets
 
 `tests/test_real_datasets.py` exercises two datasets bundled with the installed scikit-learn

@@ -5,19 +5,27 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "hivmind-mlforge"
 dynamic = ["version"]
-description = "A local toolkit for reproducible tabular supervised machine-learning workflows."
+description = "Reproducible ML training, benchmarking, cross-validation, artifacts, and inference for Python."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 authors = [{ name = "HivMindAI" }]
-keywords = ["machine-learning", "reproducibility", "scikit-learn", "tabular-data"]
+keywords = [
+    "benchmarking",
+    "cross-validation",
+    "machine-learning",
+    "model-evaluation",
+    "reproducibility",
+    "scikit-learn",
+    "tabular-data",
+]
 dependencies = [
     "pandas>=3.0,<4",
     "scikit-learn>=1.9,<2",
 ]
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     "Programming Language :: Python :: 3",
@@ -36,6 +44,7 @@ dev = [
     "pytest-cov>=5.0",
     "ruff>=0.9",
     "scikit-learn-stubs>=0.0.3,<0.1",
+    "twine>=6.0",
 ]
 
 [project.scripts]
@@ -59,7 +68,7 @@ version = {attr = "mlforge.__version__"}
 
 [tool.pytest.ini_options]
 minversion = "8.0"
-addopts = "-ra -q --strict-markers"
+addopts = "-ra -q --strict-markers --cov=mlforge --cov-report=term-missing --cov-fail-under=80"
 testpaths = ["tests"]
 
 [tool.mypy]

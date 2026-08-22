@@ -9,6 +9,7 @@ from typing import cast
 
 from mlforge import __version__
 from mlforge.artifacts import (
+    ArtifactLineageKind,
     ArtifactManifest,
     LocalArtifactStore,
     inspect_artifact,
@@ -20,6 +21,7 @@ from mlforge.benchmarks import (
     BenchmarkManifest,
     CrossValidationConfig,
     CrossValidationManifest,
+    CrossValidationResult,
     LocalBenchmarkStore,
     LocalCrossValidationStore,
     benchmark,
@@ -27,7 +29,12 @@ from mlforge.benchmarks import (
 )
 from mlforge.config import ApplicationConfig, LogLevel
 from mlforge.datasets import CsvLoadOptions, DatasetProfile, load_csv, profile_dataset
-from mlforge.errors import ConfigurationError, MLForgeError
+from mlforge.errors import ConfigurationError, FinalModelError, MLForgeError
+from mlforge.final_models import (
+    FinalModelManifest,
+    LocalFinalModelStore,
+    fit_selected_model,
+)
 from mlforge.inference import PredictionResult, predict_csv, write_predictions_csv
 from mlforge.logging_config import configure_logging
 from mlforge.pipelines import (
@@ -243,6 +250,45 @@ def _add_commands(parser: ArgumentParser) -> None:
         action="store_true",
         dest="as_json",
         help="emit the completed benchmark manifest as JSON",
+    )
+
+    finalize_parser = commands.add_parser(
+        "finalize",
+        help="refit a persisted cross-validation winner on all selected rows",
+        description=(
+            "Verify one persisted cross-validation selection, refit its rank-one estimator on "
+            "the exact selected dataset, and save a lineage-checked trusted-local artifact."
+        ),
+    )
+    _add_csv_options(finalize_parser)
+    finalize_parser.add_argument(
+        "--benchmark-id",
+        required=True,
+        help="canonical UUID of a successful cross-validation benchmark",
+    )
+    finalize_parser.add_argument(
+        "--benchmarks-dir",
+        type=Path,
+        default=Path("mlbenchmarks"),
+        help="benchmark root containing cross-validation manifests (default: mlbenchmarks)",
+    )
+    finalize_parser.add_argument(
+        "--final-models-dir",
+        type=Path,
+        default=Path("mlfinalmodels"),
+        help="immutable final-model manifest directory (default: mlfinalmodels)",
+    )
+    finalize_parser.add_argument(
+        "--artifacts-dir",
+        type=Path,
+        default=Path("artifacts"),
+        help="trusted-local final-model artifact directory (default: artifacts)",
+    )
+    finalize_parser.add_argument(
+        "--json",
+        action="store_true",
+        dest="as_json",
+        help="emit the final-model manifest and artifact metadata as JSON",
     )
 
     train_parser = commands.add_parser(
@@ -752,6 +798,89 @@ def _render_cross_validation(
     return "\n".join(lines)
 
 
+def _render_final_model(
+    manifest: FinalModelManifest,
+    *,
+    manifest_path: Path,
+    artifact_path: Path,
+) -> str:
+    selection = manifest.selection
+    lines = [
+        f"Final model: {manifest.final_model_id}",
+        f"Status: {manifest.status.value}",
+        f"Estimator: {manifest.configuration.estimator}",
+        f"Training rows: {manifest.training_rows}",
+        f"Dataset SHA-256: {manifest.dataset.sha256}",
+        f"Selection benchmark: {selection.benchmark_id}",
+        (
+            f"Selection evidence: {selection.fold_count}-fold "
+            f"{selection.primary_metric}={selection.primary_metric_mean:.6g} "
+            f"+/- {selection.primary_metric_standard_deviation:.3g}"
+        ),
+        f"Manifest: {manifest_path}",
+        f"Artifact: {artifact_path}",
+    ]
+    if manifest.warnings:
+        lines.append("Warnings:")
+        lines.extend(f"  - {message}" for message in manifest.warnings)
+    lines.append(
+        "Note: every selected row was used for fitting. The cross-validation score is selection "
+        "evidence, not a new post-selection performance estimate."
+    )
+    return "\n".join(lines)
+
+
+def _run_finalize(arguments: Namespace) -> int:
+    dataset = load_csv(
+        cast(Path, arguments.path),
+        target=cast(str, arguments.target),
+        options=_csv_options(arguments),
+    )
+    benchmark_store = LocalCrossValidationStore(
+        cast(Path, arguments.benchmarks_dir) / "cross-validation"
+    )
+    benchmark_id = cast(str, arguments.benchmark_id)
+    selection = CrossValidationResult(
+        manifest=benchmark_store.read(benchmark_id),
+        manifest_path=benchmark_store.manifest_path(benchmark_id),
+    )
+    result = fit_selected_model(
+        dataset,
+        selection,
+        final_model_store=LocalFinalModelStore(cast(Path, arguments.final_models_dir)),
+        artifact_store=LocalArtifactStore(cast(Path, arguments.artifacts_dir)),
+    )
+    artifact_path = result.artifact_path
+    if artifact_path is None:
+        raise FinalModelError("Final-model application service did not persist an artifact.")
+    artifact_manifest = inspect_artifact(artifact_path)
+    if cast(bool, arguments.as_json):
+        print(
+            json.dumps(
+                {
+                    "final_model": result.manifest.to_dict(),
+                    "manifest_path": str(result.manifest_path),
+                    "artifact": {
+                        "path": str(artifact_path),
+                        "manifest": artifact_manifest.to_dict(),
+                    },
+                },
+                allow_nan=False,
+                indent=2,
+                sort_keys=True,
+            )
+        )
+    else:
+        print(
+            _render_final_model(
+                result.manifest,
+                manifest_path=result.manifest_path,
+                artifact_path=artifact_path,
+            )
+        )
+    return 0
+
+
 def _render_run_list(manifests: tuple[RunManifest, ...]) -> str:
     if not manifests:
         return "No runs found."
@@ -810,9 +939,15 @@ def _render_comparison(comparison: RunComparison) -> str:
 
 
 def _render_artifact(manifest: ArtifactManifest, *, path: Path) -> str:
+    identity = (
+        f"Run: {manifest.run_id}"
+        if manifest.lineage_kind is ArtifactLineageKind.TRAINING_RUN
+        else f"Final model: {manifest.model_id}"
+    )
     lines = [
         f"Artifact: {path}",
-        f"Run: {manifest.run_id}",
+        identity,
+        f"Lineage: {manifest.lineage_kind.value}",
         f"Task: {manifest.task}",
         f"Target: {manifest.target}",
         f"Serialization: {manifest.serialization_format}",
@@ -913,6 +1048,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _run_train(arguments)
         if command == "benchmark":
             return _run_benchmark(arguments)
+        if command == "finalize":
+            return _run_finalize(arguments)
         if command == "runs":
             runs_command = cast(str | None, arguments.runs_command)
             if runs_command is not None:

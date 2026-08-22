@@ -6,8 +6,8 @@ committed to the repository or included in distributions.
 ## Automated quality gate
 
 The default `python -m pytest` command measures the installed `mlforge` package, reports missing
-statements, and fails below 80% coverage. The threshold is intentionally below the v0.2.1
-preparation measurement of 84.66% so it prevents material regressions without encouraging tests
+statements, and fails below 80% coverage. The threshold is intentionally below the v0.3.0
+preparation measurement of 83.68% so it prevents material regressions without encouraging tests
 that merely chase lines.
 
 GitHub Actions runs Ruff linting, Ruff formatting checks, strict mypy, pytest with the coverage
@@ -67,4 +67,5 @@ created environment outside the source tree, run `pip check`, and execute `scrip
 without relying on repository package imports. The smoke script validates package metadata,
 `import mlforge`, the `mlforge` module entrypoint, validated ingestion, training, artifact
 persistence and inspection, explicit trusted loading, prediction, holdout benchmarking,
-cross-validated benchmarking, ranking, immutable manifest persistence, and strict readback.
+cross-validated benchmarking, ranking, explicit all-row final fitting, final-model artifact
+lineage, immutable manifest persistence, and strict readback.

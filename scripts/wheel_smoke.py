@@ -22,6 +22,7 @@ from mlforge.benchmarks import (
     cross_validate_benchmark,
 )
 from mlforge.datasets import load_csv
+from mlforge.final_models import LocalFinalModelStore, fit_selected_model
 from mlforge.inference import predict_frame, write_predictions_csv
 from mlforge.pipelines import CrossValidationSplitConfig, TaskType
 from mlforge.runs import LocalRunStore
@@ -91,6 +92,25 @@ def main() -> None:
             ),
             store=LocalCrossValidationStore(workspace / "cross-validation"),
         )
+        final_model_result = fit_selected_model(
+            dataset,
+            cross_validation_result,
+            final_model_store=LocalFinalModelStore(workspace / "final-models"),
+            artifact_store=LocalArtifactStore(workspace / "artifacts"),
+        )
+        assert final_model_result.artifact_path is not None
+        final_inspected = inspect_artifact(final_model_result.artifact_path)
+        final_loaded = load_artifact(final_model_result.artifact_path, trusted=True)
+        final_predictions = predict_frame(
+            final_loaded,
+            pd.DataFrame(
+                {
+                    "age": [29, 57],
+                    "monthly_spend": [62.0, 118.5],
+                    "region": ["south", "north"],
+                }
+            ),
+        )
 
         assert inspected.run_id == result.manifest.run_id
         assert predictions.run_id == result.manifest.run_id
@@ -103,6 +123,22 @@ def main() -> None:
         assert cross_validation_result.manifest_path.is_file()
         assert len(cross_validation_result.manifest.folds) == 3
         assert {entry.rank for entry in cross_validation_result.manifest.entries} == {1, 2, 3}
+        assert final_model_result.manifest.training_rows == len(dataset.frame)
+        assert final_model_result.manifest.fit_scope == "all_rows"
+        assert final_model_result.manifest.selection.benchmark_id == (
+            cross_validation_result.manifest.benchmark_id
+        )
+        assert final_model_result.manifest.artifact is not None
+        assert (
+            final_model_result.manifest.artifact.pipeline_sha256 == final_inspected.pipeline_sha256
+        )
+        assert (
+            final_model_result.manifest.artifact.pipeline_size_bytes
+            == final_inspected.pipeline_size_bytes
+        )
+        assert final_inspected.model_id == final_model_result.manifest.final_model_id
+        assert final_predictions.run_id == final_model_result.manifest.final_model_id
+        assert final_predictions.row_count == 2
         assert (
             LocalBenchmarkStore(workspace / "benchmarks").read(
                 benchmark_result.manifest.benchmark_id
@@ -121,6 +157,7 @@ def main() -> None:
                     "artifact": str(saved.path),
                     "benchmark_winner": benchmark_result.manifest.winner.estimator,
                     "cross_validation_winner": (cross_validation_result.manifest.winner.estimator),
+                    "final_model_id": final_model_result.manifest.final_model_id,
                     "prediction_output": str(prediction_output),
                     "predictions": predictions.to_dict(),
                     "version": __version__,

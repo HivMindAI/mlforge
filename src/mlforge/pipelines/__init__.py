@@ -1,6 +1,8 @@
 """Leakage-safe splitting and preprocessing public API."""
 
 from mlforge.pipelines.preprocessing import (
+    build_final_model_pipeline,
+    build_final_preprocessor,
     build_model_pipeline,
     build_preprocessor,
     infer_feature_schema,
@@ -30,6 +32,8 @@ __all__ = [
     "PreprocessingConfig",
     "SplitConfig",
     "TaskType",
+    "build_final_model_pipeline",
+    "build_final_preprocessor",
     "build_model_pipeline",
     "build_preprocessor",
     "infer_feature_schema",

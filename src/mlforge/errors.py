@@ -16,6 +16,10 @@ __all__ = [
     "DatasetPathError",
     "DatasetSplitError",
     "DatasetValidationError",
+    "FinalModelError",
+    "FinalModelFailedError",
+    "FinalModelLineageError",
+    "FinalModelStoreError",
     "InferenceError",
     "MLForgeError",
     "PipelineError",
@@ -104,6 +108,27 @@ class BenchmarkFailedError(BenchmarkError):
     def __init__(self, message: str, *, benchmark_id: str, manifest_path: str) -> None:
         super().__init__(message)
         self.benchmark_id = benchmark_id
+        self.manifest_path = manifest_path
+
+
+class FinalModelError(MLForgeError):
+    """Base class for expected final-model fitting failures."""
+
+
+class FinalModelLineageError(FinalModelError):
+    """Raised when final fitting cannot verify its cross-validation selection."""
+
+
+class FinalModelStoreError(FinalModelError):
+    """Raised when an immutable final-model manifest cannot be stored or read safely."""
+
+
+class FinalModelFailedError(FinalModelError):
+    """Raised after an expected final-model fitting failure has been recorded."""
+
+    def __init__(self, message: str, *, final_model_id: str, manifest_path: str) -> None:
+        super().__init__(message)
+        self.final_model_id = final_model_id
         self.manifest_path = manifest_path
 
 

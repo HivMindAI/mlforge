@@ -28,6 +28,7 @@ dist/
 /artifacts/
 /data/
 /mlbenchmarks/
+/mlfinalmodels/
 /mlruns/
 /models/
 /checkpoints/

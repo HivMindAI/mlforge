@@ -5,6 +5,40 @@ All notable MLForge changes are recorded here. The project follows semantic vers
 
 ## [Unreleased]
 
+No changes yet.
+
+## [0.3.0] - 2026-08-22
+
+### Added
+
+- Add an explicit `fit_selected_model` application service and `mlforge finalize` command that
+  accept persisted successful cross-validation selection evidence, refit its winner on every exact
+  selected dataset row, and save the prediction-ready artifact through the existing artifact store.
+- Add strict create-only final-model manifests recording selection UUID/digest, fold evidence,
+  dataset identity, reconstructed preprocessing and estimator parameters, `fit_scope=all_rows`,
+  artifact identity/payload hash, environment, warnings, terminal status, and failure evidence.
+- Add artifact manifest version 2 with explicit final-model lineage while retaining version-1
+  training-run artifact inspection and loading compatibility.
+- Add a complete finalization example and extend installed-wheel smoke validation through final
+  fitting, safe artifact inspection, trusted loading, and prediction.
+
+### Reliability
+
+- Revalidate the selected CSV and in-memory dataframe before final fitting, refuse changed
+  selection manifests or estimator parameters, and never present all-row training values as
+  evaluation metrics.
+- Keep Milestone 9 service infrastructure out of scope; this remains a local, single-process,
+  classification-only selection and fitting workflow.
+
+### Project status
+
+- Complete the intended local MLForge workflow from validated data through benchmarking,
+  cross-validation selection, verified all-row fitting, artifact persistence, trusted loading,
+  and prediction.
+- Move the feature-complete portfolio project into maintenance mode. Future releases are limited
+  to justified bug, security, compatibility, and documentation fixes; Milestone 9 remains
+  postponed and conditional.
+
 ## [0.2.1] - 2026-08-20
 
 ### Changed
@@ -73,7 +107,8 @@ selection evidence; it does not fit a final deployment model or provide a nested
 - Python import package: `mlforge`
 - Console command: `mlforge`
 
-[Unreleased]: https://github.com/HivMindAI/mlforge/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/HivMindAI/mlforge/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/HivMindAI/mlforge/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/HivMindAI/mlforge/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/HivMindAI/mlforge/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/HivMindAI/mlforge/releases/tag/v0.1.0

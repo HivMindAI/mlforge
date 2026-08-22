@@ -226,11 +226,51 @@ print(result.manifest.to_json())
 ```
 
 This result selects an estimator under the declared folds. It intentionally does not return a
-fitted deployment pipeline: train the chosen estimator separately under an explicit final-model
-policy. Because the same folds informed selection, do not describe the winning cross-validation
-mean as a nested-tuning or untouched final-test estimate.
+fitted pipeline. Because the same folds informed selection, do not describe the winning
+cross-validation mean as a nested-tuning or untouched final-test estimate.
 
-## 10. Verify the checkout
+## 10. Explicitly fit the selected final model
+
+Copy the cross-validation benchmark UUID and explicitly refit its winner on every selected row:
+
+```powershell
+mlforge finalize examples/customer_churn.csv --target churn --benchmark-id BENCHMARK_ID --benchmarks-dir mlbenchmarks --final-models-dir mlfinalmodels --artifacts-dir artifacts --json
+```
+
+Before fitting, MLForge re-reads the immutable selection manifest, verifies its digest and UUID,
+revalidates the source CSV, and requires the exact selected SHA-256, parser settings, target, and
+shape. It reconstructs the recorded preprocessing, feature overrides, random seed, estimator, and
+estimator parameters. A new pipeline learns from all rows, so no new validation metric is created.
+
+The command creates:
+
+- `mlfinalmodels/FINAL_MODEL_ID.json`: terminal all-row fitting evidence and CV lineage;
+- `artifacts/FINAL_MODEL_ID.mlforge`: fitted pipeline, input contract, and final-manifest digest.
+
+The Python API keeps selection, fitting, persistence, and executable loading explicit:
+
+```python
+from pathlib import Path
+
+from mlforge.artifacts import LocalArtifactStore
+from mlforge.final_models import LocalFinalModelStore, fit_selected_model
+
+final_model = fit_selected_model(
+    dataset,
+    result,
+    final_model_store=LocalFinalModelStore(Path("mlfinalmodels")),
+    artifact_store=LocalArtifactStore(Path("artifacts")),
+)
+print(final_model.artifact_path)
+```
+
+Safe inspection and trusted prediction use the same commands as evaluated-run artifacts. The
+version-2 artifact manifest identifies `lineage_kind` as `final-model`. The immutable final-model
+record separates cross-validation values under `selection_evidence` from the metric-free
+`final_fit` block and records the artifact payload SHA-256. See the runnable
+`examples/finalize_customer_churn.py` workflow.
+
+## 11. Verify the checkout
 
 Run the executable examples and all contributor checks:
 
@@ -240,6 +280,7 @@ python examples/preprocess_dataset.py
 python examples/train_customer_churn.py
 python examples/benchmark_customer_churn.py
 python examples/cross_validate_customer_churn.py
+python examples/finalize_customer_churn.py
 python examples/train_and_predict.py
 ruff check .
 ruff format --check .
@@ -248,6 +289,7 @@ python -m pytest
 python -m build
 ```
 
-Generated `mlruns/`, `mlbenchmarks/`, and `artifacts/` directories are ignored by Git. Delete them
-when you no longer need the local outputs. Continue with the [API reference](api.md) for lower-level
-pipeline and storage interfaces, and [architecture](architecture.md) for design boundaries.
+Generated `mlruns/`, `mlbenchmarks/`, `mlfinalmodels/`, and `artifacts/` directories are ignored by
+Git. Delete them when you no longer need the local outputs. Continue with the
+[API reference](api.md) for lower-level pipeline and storage interfaces, and
+[architecture](architecture.md) for design boundaries.

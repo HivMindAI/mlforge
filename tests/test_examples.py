@@ -128,3 +128,27 @@ def test_train_and_predict_example() -> None:
     assert output["artifact"]["run_id"] == output["predictions"]["run_id"]
     assert output["predictions"]["row_count"] == 2
     assert len(output["artifact"]["pipeline_sha256"]) == 64
+
+
+def test_finalize_customer_churn_example() -> None:
+    """The selection-to-final-model example should preserve lineage and predict."""
+    repository_root = Path(__file__).resolve().parents[1]
+    completed = subprocess.run(
+        [sys.executable, repository_root / "examples" / "finalize_customer_churn.py"],
+        cwd=repository_root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    output = json.loads(completed.stdout)
+    assert (
+        output["final_model"]["selection_evidence"]["benchmark_id"]
+        == output["selection"]["benchmark_id"]
+    )
+    assert output["final_model"]["final_fit"]["training_rows"] == 8
+    assert output["final_model"]["final_fit"]["fit_scope"] == "all_rows"
+    assert output["artifact"]["lineage_kind"] == "final-model"
+    assert output["artifact"]["model_id"] == output["final_model"]["final_model_id"]
+    assert output["predictions"]["row_count"] == 2

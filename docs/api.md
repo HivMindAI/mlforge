@@ -51,6 +51,8 @@ Import from `mlforge.pipelines`.
 | `infer_feature_schema(features, *, overrides=None)` | Infer roles from the training dataframe only. |
 | `build_preprocessor(split, *, config=None, overrides=None)` | Return an unfitted column transformer. |
 | `build_model_pipeline(split, estimator, *, config=None, overrides=None)` | Clone an estimator and return an unfitted preprocessing/model pipeline. |
+| `build_final_preprocessor(features, *, config=None, overrides=None)` | Return an unfitted all-row transformer for explicit final fitting. |
+| `build_final_model_pipeline(features, estimator, *, config=None, overrides=None)` | Clone an estimator and return an unfitted all-row final pipeline. |
 
 The builders never fit. Callers using these lower-level extension points must fit only with
 `split.train_features` and `split.train_target`.
@@ -118,6 +120,29 @@ before `BenchmarkFailedError` is raised. `CrossValidationResult` deliberately ha
 selecting an estimator is separate from training a final model, and non-nested cross-validation is
 not an unbiased estimate after tuning or repeated selection.
 
+## Final models
+
+Import from `mlforge.final_models`.
+
+| Public name | Purpose |
+| --- | --- |
+| `fit_selected_model(dataset, selection, *, final_model_store=None, artifact_store=None)` | Verify persisted CV selection and exact data, refit the rank-one estimator on all rows, and save its artifact. |
+| `FinalModelResult` | Fitted pipeline, strict manifest/path, artifact path, input schema, and raw dtypes. |
+| `FinalModelManifest` | Terminal all-row fit record separating selection evidence, final-fit scope, and artifact payload lineage. |
+| `FinalModelArtifact` | Artifact/model identity, serialization format, pipeline size, and pipeline SHA-256 contract. |
+| `FinalModelSelection` | Benchmark UUID/digest, selected estimator/metric aggregates, fold count, and fold-plan digest. |
+| `FinalModelConfiguration` | Reconstructed preprocessing, feature roles, seed, estimator, and exact parameters. |
+| `LocalFinalModelStore` | Create-only validated final-model manifest storage. |
+| `FINAL_MODEL_FIT_SCOPE` | Canonical `all_rows` scope recorded for every final fitting attempt. |
+| `FINAL_MODEL_MANIFEST_SCHEMA_VERSION` | Independent final-model record schema version. |
+
+`fit_selected_model` accepts only a `CrossValidationResult` backed by its unchanged regular-file
+manifest. The loaded dataset must still match its own ingestion metadata, source CSV, and the
+selection's dataset identity. The service fits every selected row, writes the immutable final-model
+record, persists through `LocalArtifactStore`, and returns its artifact path. It deliberately
+records no training-set metric. Expected fit failures receive an immutable failed manifest;
+lineage failures stop before fitting or writing.
+
 ## Runs
 
 Import from `mlforge.runs`.
@@ -141,11 +166,13 @@ Import from `mlforge.artifacts`.
 
 | Public name | Purpose |
 | --- | --- |
-| `LocalArtifactStore` | Create-only local model-artifact storage keyed by successful run UUID. |
+| `LocalArtifactStore` | Create-only local model-artifact storage keyed by a run or final-model UUID. |
+| `LocalArtifactStore.save_final(result)` | Persist a successful final pipeline with verified final-manifest lineage. |
 | `inspect_artifact(path)` | Validate archive structure, manifest, size, and checksum without deserializing. |
 | `load_artifact(path, *, trusted=False)` | Load a compatible pickle pipeline only with explicit trust. |
 | `verify_run_manifest(artifact, run)` | Verify artifact lineage against a canonical run manifest. |
-| `ArtifactManifest`, `ArtifactEnvironment`, `ArtifactFeature`, `FeatureRole` | Safe metadata and ordered feature contract. |
+| `verify_final_model_manifest(artifact, final_model)` | Verify artifact lineage against a canonical final-model manifest. |
+| `ArtifactManifest`, `ArtifactEnvironment`, `ArtifactFeature`, `FeatureRole`, `ArtifactLineageKind` | Safe metadata, lineage kind, and ordered feature contract. |
 | `SavedArtifact`, `LoadedArtifact` | Persisted and explicitly loaded artifact results. |
 | `ARTIFACT_MANIFEST_SCHEMA_VERSION`, `ARTIFACT_SERIALIZATION_FORMAT`, `ARTIFACT_SUFFIX` | Versioned format constants. |
 
@@ -196,6 +223,10 @@ MLForgeError
 |- BenchmarkError
 |  |- BenchmarkStoreError
 |  `- BenchmarkFailedError
+|- FinalModelError
+|  |- FinalModelLineageError
+|  |- FinalModelStoreError
+|  `- FinalModelFailedError
 |- RunError
 |  |- RunStoreError
 |  `- RunComparisonError

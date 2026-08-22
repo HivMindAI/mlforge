@@ -20,6 +20,13 @@ Starting with `1.0.0`:
 
 Published release contents are immutable. A fix always receives a new version.
 
+## Maintenance mode after v0.3.0
+
+v0.3.0 is the feature-complete release of the intended local MLForge product. Subsequent releases
+should normally contain only real bug fixes, security fixes, compatibility fixes, documentation
+corrections, and other justified maintenance changes. Conditional service, multi-user, hosted, and
+deployment capabilities are not part of the supported product and are not an active roadmap.
+
 ## Public API
 
 The supported Python API consists of the names listed in `__all__` by these modules and documented
@@ -31,6 +38,7 @@ in [API reference](api.md):
 - `mlforge.config`
 - `mlforge.datasets`
 - `mlforge.errors`
+- `mlforge.final_models`
 - `mlforge.inference`
 - `mlforge.logging_config`
 - `mlforge.pipelines`
@@ -59,14 +67,20 @@ make accidental additions and removals visible.
 Dropping a verified Python version or narrowing a dependency range requires an announced
 compatibility change. Support claims are updated only after the corresponding CI job passes.
 
-## Serialized runs, benchmarks, cross-validation benchmarks, and artifacts
+## Serialized runs, benchmarks, final models, and artifacts
 
-Run, holdout-benchmark, cross-validation-benchmark, and artifact manifests have independent
-integer schema versions. Readers validate the complete schema and reject unsupported versions
-rather than guessing how to migrate them. Adding or changing a required field therefore requires
-a schema-version decision and fixture tests. Cross-validation records are intentionally separate
-from ordinary run manifests because one estimator outcome contains several fitted folds rather
-than one fitted holdout pipeline.
+Run, holdout-benchmark, cross-validation-benchmark, final-model, and artifact manifests have
+independent integer schema versions. Readers validate the complete schema and reject unsupported
+versions rather than guessing how to migrate them. Adding or changing a required field therefore
+requires a schema-version decision and fixture tests. Cross-validation records are intentionally
+separate from ordinary run manifests because one estimator outcome contains several fitted folds.
+Final-model records are separate because all selected rows are fitted and no held-out metric exists.
+Their selection values live under `selection_evidence`; `final_fit` records only `all_rows` scope and
+dimensions, while the artifact contract records identity plus executable-payload size and SHA-256.
+
+Artifact manifest version 1 remains readable and represents evaluated training-run lineage.
+Version 2 uses a generic model identity plus an explicit lineage kind and manifest digest; the
+initial version-2 writer is reserved for final-model lineage.
 
 Model artifacts have a deliberately narrower boundary than the Python API. Trusted loading
 requires exact Python, MLForge, pandas, NumPy, SciPy, and scikit-learn versions recorded at training

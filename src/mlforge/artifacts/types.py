@@ -14,7 +14,8 @@ from sklearn.pipeline import Pipeline
 
 from mlforge.errors import ArtifactFormatError
 
-ARTIFACT_MANIFEST_SCHEMA_VERSION = 1
+ARTIFACT_MANIFEST_SCHEMA_VERSION = 2
+TRAINING_RUN_ARTIFACT_MANIFEST_SCHEMA_VERSION = 1
 ARTIFACT_SERIALIZATION_FORMAT = "pickle-protocol-5"
 
 
@@ -23,6 +24,13 @@ class FeatureRole(StrEnum):
 
     NUMERIC = "numeric"
     CATEGORICAL = "categorical"
+
+
+class ArtifactLineageKind(StrEnum):
+    """Immutable record type whose digest anchors an artifact."""
+
+    TRAINING_RUN = "training-run"
+    FINAL_MODEL = "final-model"
 
 
 def _object(value: object, label: str) -> dict[str, object]:
@@ -174,12 +182,24 @@ class ArtifactManifest:
     categorical_fill_value: str
     features: tuple[ArtifactFeature, ...]
     environment: ArtifactEnvironment
+    lineage_kind: ArtifactLineageKind = ArtifactLineageKind.TRAINING_RUN
 
     def __post_init__(self) -> None:
-        if _integer(self.schema_version, "schema_version") != ARTIFACT_MANIFEST_SCHEMA_VERSION:
+        schema_version = _integer(self.schema_version, "schema_version")
+        if schema_version not in {
+            TRAINING_RUN_ARTIFACT_MANIFEST_SCHEMA_VERSION,
+            ARTIFACT_MANIFEST_SCHEMA_VERSION,
+        }:
             raise ArtifactFormatError(
                 f"Unsupported artifact manifest schema version: {self.schema_version}."
             )
+        if not isinstance(self.lineage_kind, ArtifactLineageKind):
+            raise ArtifactFormatError("Artifact lineage_kind must be an ArtifactLineageKind value.")
+        if (
+            schema_version == TRAINING_RUN_ARTIFACT_MANIFEST_SCHEMA_VERSION
+            and self.lineage_kind is not ArtifactLineageKind.TRAINING_RUN
+        ):
+            raise ArtifactFormatError("Version 1 artifacts can reference training runs only.")
         run_id = _string(self.run_id, "run_id")
         try:
             parsed_id = UUID(run_id)
@@ -218,20 +238,40 @@ class ArtifactManifest:
         if not isinstance(self.environment, ArtifactEnvironment):
             raise ArtifactFormatError("Artifact environment is invalid.")
 
+    @property
+    def model_id(self) -> str:
+        """Return the generic model identity (the legacy name is ``run_id``)."""
+        return self.run_id
+
+    @property
+    def lineage_manifest_sha256(self) -> str:
+        """Return the generic lineage digest (legacy name: ``run_manifest_sha256``)."""
+        return self.run_manifest_sha256
+
     def to_dict(self) -> dict[str, Any]:
-        return {
+        shared: dict[str, Any] = {
             "schema_version": self.schema_version,
-            "run_id": self.run_id,
             "created_at": self.created_at,
             "serialization_format": self.serialization_format,
             "pipeline_sha256": self.pipeline_sha256,
             "pipeline_size_bytes": self.pipeline_size_bytes,
-            "run_manifest_sha256": self.run_manifest_sha256,
             "task": self.task,
             "target": self.target,
             "categorical_fill_value": self.categorical_fill_value,
             "features": [feature.to_dict() for feature in self.features],
             "environment": self.environment.to_dict(),
+        }
+        if self.schema_version == TRAINING_RUN_ARTIFACT_MANIFEST_SCHEMA_VERSION:
+            return {
+                **shared,
+                "run_id": self.run_id,
+                "run_manifest_sha256": self.run_manifest_sha256,
+            }
+        return {
+            **shared,
+            "model_id": self.model_id,
+            "lineage_kind": self.lineage_kind.value,
+            "lineage_manifest_sha256": self.lineage_manifest_sha256,
         }
 
     def to_json(self, *, indent: int | None = 2) -> str:
@@ -246,29 +286,48 @@ class ArtifactManifest:
         except (json.JSONDecodeError, UnicodeError) as error:
             raise ArtifactFormatError(f"Artifact manifest is not valid JSON: {error}") from error
         data = _object(raw, "root")
-        expected = {
+        schema_version = _integer(data.get("schema_version"), "schema_version")
+        shared = {
             "schema_version",
-            "run_id",
             "created_at",
             "serialization_format",
             "pipeline_sha256",
             "pipeline_size_bytes",
-            "run_manifest_sha256",
             "task",
             "target",
             "categorical_fill_value",
             "features",
             "environment",
         }
+        if schema_version == TRAINING_RUN_ARTIFACT_MANIFEST_SCHEMA_VERSION:
+            expected = shared | {"run_id", "run_manifest_sha256"}
+            run_id = _string(data.get("run_id"), "run_id")
+            lineage_digest = _sha256(data.get("run_manifest_sha256"), "run_manifest_sha256")
+            lineage_kind = ArtifactLineageKind.TRAINING_RUN
+        elif schema_version == ARTIFACT_MANIFEST_SCHEMA_VERSION:
+            expected = shared | {"model_id", "lineage_kind", "lineage_manifest_sha256"}
+            run_id = _string(data.get("model_id"), "model_id")
+            lineage_digest = _sha256(data.get("lineage_manifest_sha256"), "lineage_manifest_sha256")
+            raw_kind = _string(data.get("lineage_kind"), "lineage_kind")
+            try:
+                lineage_kind = ArtifactLineageKind(raw_kind)
+            except ValueError as error:
+                raise ArtifactFormatError(
+                    f"Unsupported artifact lineage kind: {raw_kind!r}."
+                ) from error
+        else:
+            raise ArtifactFormatError(
+                f"Unsupported artifact manifest schema version: {schema_version}."
+            )
         _keys(data, expected, "root")
         return cls(
-            schema_version=_integer(data["schema_version"], "schema_version"),
-            run_id=_string(data["run_id"], "run_id"),
+            schema_version=schema_version,
+            run_id=run_id,
             created_at=_string(data["created_at"], "created_at"),
             serialization_format=_string(data["serialization_format"], "serialization_format"),
             pipeline_sha256=_sha256(data["pipeline_sha256"], "pipeline_sha256"),
             pipeline_size_bytes=_integer(data["pipeline_size_bytes"], "pipeline_size_bytes"),
-            run_manifest_sha256=_sha256(data["run_manifest_sha256"], "run_manifest_sha256"),
+            run_manifest_sha256=lineage_digest,
             task=_string(data["task"], "task"),
             target=_string(data["target"], "target"),
             categorical_fill_value=_string(
@@ -278,6 +337,7 @@ class ArtifactManifest:
                 ArtifactFeature.from_object(item) for item in _array(data["features"], "features")
             ),
             environment=ArtifactEnvironment.from_object(data["environment"]),
+            lineage_kind=lineage_kind,
         )
 
 

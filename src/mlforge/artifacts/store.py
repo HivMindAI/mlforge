@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from importlib.metadata import version
 from pathlib import Path
+from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 from sklearn.exceptions import InconsistentVersionWarning  # type: ignore[attr-defined]
@@ -22,8 +23,10 @@ from sklearn.utils.validation import check_is_fitted
 from mlforge.artifacts.types import (
     ARTIFACT_MANIFEST_SCHEMA_VERSION,
     ARTIFACT_SERIALIZATION_FORMAT,
+    TRAINING_RUN_ARTIFACT_MANIFEST_SCHEMA_VERSION,
     ArtifactEnvironment,
     ArtifactFeature,
+    ArtifactLineageKind,
     ArtifactManifest,
     FeatureRole,
     LoadedArtifact,
@@ -35,10 +38,14 @@ from mlforge.errors import (
     ArtifactIntegrityError,
     ArtifactPathError,
     ArtifactTrustError,
+    FinalModelStoreError,
     RunStoreError,
 )
 from mlforge.runs import RunManifest, RunStatus
 from mlforge.training import TrainingResult
+
+if TYPE_CHECKING:
+    from mlforge.final_models.types import FinalModelManifest, FinalModelResult
 
 ARTIFACT_SUFFIX = ".mlforge"
 MANIFEST_MEMBER = "manifest.json"
@@ -130,8 +137,8 @@ def _read_archive(path: Path, *, include_pipeline: bool) -> tuple[ArtifactManife
             except UnicodeError as error:
                 raise ArtifactFormatError("Artifact manifest must be valid UTF-8 text.") from error
             manifest = ArtifactManifest.from_json(manifest_text)
-            if manifest.run_id != resolved.stem:
-                raise ArtifactFormatError("Artifact run ID does not match its filename.")
+            if manifest.model_id != resolved.stem:
+                raise ArtifactFormatError("Artifact model ID does not match its filename.")
             if manifest.pipeline_size_bytes != pipeline_info.file_size:
                 raise ArtifactIntegrityError("Artifact pipeline size does not match its manifest.")
 
@@ -155,7 +162,7 @@ def _read_archive(path: Path, *, include_pipeline: bool) -> tuple[ArtifactManife
     return manifest, bytes(payload) if payload is not None else None
 
 
-def _features(result: TrainingResult) -> tuple[ArtifactFeature, ...]:
+def _features(result: TrainingResult | FinalModelResult) -> tuple[ArtifactFeature, ...]:
     numeric = set(result.feature_schema.numeric_features)
     categorical = set(result.feature_schema.categorical_features)
     return tuple(
@@ -172,7 +179,7 @@ def _features(result: TrainingResult) -> tuple[ArtifactFeature, ...]:
 def _manifest(result: TrainingResult, pipeline_bytes: bytes) -> ArtifactManifest:
     environment = result.manifest.environment
     return ArtifactManifest(
-        schema_version=ARTIFACT_MANIFEST_SCHEMA_VERSION,
+        schema_version=TRAINING_RUN_ARTIFACT_MANIFEST_SCHEMA_VERSION,
         run_id=result.manifest.run_id,
         created_at=datetime.now(UTC).isoformat(timespec="microseconds"),
         serialization_format=ARTIFACT_SERIALIZATION_FORMAT,
@@ -193,6 +200,51 @@ def _manifest(result: TrainingResult, pipeline_bytes: bytes) -> ArtifactManifest
             scipy=environment.scipy,
             scikit_learn=environment.scikit_learn,
         ),
+        lineage_kind=ArtifactLineageKind.TRAINING_RUN,
+    )
+
+
+def _final_model_manifest(
+    result: FinalModelResult,
+    pipeline_bytes: bytes,
+) -> ArtifactManifest:
+    environment = result.manifest.environment
+    artifact_contract = result.manifest.artifact
+    if artifact_contract is None:
+        raise ArtifactIntegrityError("Final-model manifest is missing its artifact contract.")
+    pipeline_sha256 = hashlib.sha256(pipeline_bytes).hexdigest()
+    if (
+        artifact_contract.artifact_id != result.manifest.final_model_id
+        or artifact_contract.serialization_format != ARTIFACT_SERIALIZATION_FORMAT
+        or artifact_contract.pipeline_sha256 != pipeline_sha256
+        or artifact_contract.pipeline_size_bytes != len(pipeline_bytes)
+    ):
+        raise ArtifactIntegrityError(
+            "Serialized final pipeline does not match its immutable artifact contract."
+        )
+    return ArtifactManifest(
+        schema_version=ARTIFACT_MANIFEST_SCHEMA_VERSION,
+        run_id=result.manifest.final_model_id,
+        created_at=datetime.now(UTC).isoformat(timespec="microseconds"),
+        serialization_format=ARTIFACT_SERIALIZATION_FORMAT,
+        pipeline_sha256=pipeline_sha256,
+        pipeline_size_bytes=len(pipeline_bytes),
+        run_manifest_sha256=hashlib.sha256(
+            result.manifest.to_json(indent=None).encode("utf-8")
+        ).hexdigest(),
+        task=result.manifest.configuration.task,
+        target=result.manifest.dataset.target,
+        categorical_fill_value=result.manifest.configuration.categorical_fill_value,
+        features=_features(result),
+        environment=ArtifactEnvironment(
+            python=environment.python,
+            mlforge=environment.mlforge,
+            pandas=environment.pandas,
+            numpy=environment.numpy,
+            scipy=environment.scipy,
+            scikit_learn=environment.scikit_learn,
+        ),
+        lineage_kind=ArtifactLineageKind.FINAL_MODEL,
     )
 
 
@@ -202,11 +254,49 @@ def verify_run_manifest(artifact: ArtifactManifest, run: RunManifest) -> None:
         raise ArtifactIntegrityError(
             "Artifact and run manifests must be validated manifest values."
         )
+    if artifact.lineage_kind is not ArtifactLineageKind.TRAINING_RUN:
+        raise ArtifactIntegrityError("Artifact does not reference a training run manifest.")
     if artifact.run_id != run.run_id:
         raise ArtifactIntegrityError("Artifact and run manifest identifiers do not match.")
     digest = hashlib.sha256(run.to_json(indent=None).encode("utf-8")).hexdigest()
     if artifact.run_manifest_sha256 != digest:
         raise ArtifactIntegrityError("Artifact does not reference the supplied run manifest.")
+
+
+def verify_final_model_manifest(
+    artifact: ArtifactManifest,
+    final_model: FinalModelManifest,
+) -> None:
+    """Verify that an artifact references the exact canonical final-model record."""
+    from mlforge.final_models.types import FinalModelManifest
+
+    if not isinstance(artifact, ArtifactManifest) or not isinstance(
+        final_model, FinalModelManifest
+    ):
+        raise ArtifactIntegrityError(
+            "Artifact and final-model manifests must be validated manifest values."
+        )
+    if artifact.lineage_kind is not ArtifactLineageKind.FINAL_MODEL:
+        raise ArtifactIntegrityError("Artifact does not reference a final-model manifest.")
+    if artifact.model_id != final_model.final_model_id:
+        raise ArtifactIntegrityError("Artifact and final-model manifest identifiers do not match.")
+    digest = hashlib.sha256(final_model.to_json(indent=None).encode("utf-8")).hexdigest()
+    if artifact.lineage_manifest_sha256 != digest:
+        raise ArtifactIntegrityError(
+            "Artifact does not reference the supplied final-model manifest."
+        )
+    contract = final_model.artifact
+    if contract is None:
+        raise ArtifactIntegrityError("Final-model manifest is missing its artifact contract.")
+    if (
+        contract.artifact_id != artifact.model_id
+        or contract.serialization_format != artifact.serialization_format
+        or contract.pipeline_sha256 != artifact.pipeline_sha256
+        or contract.pipeline_size_bytes != artifact.pipeline_size_bytes
+    ):
+        raise ArtifactIntegrityError(
+            "Artifact payload does not match the supplied final-model artifact contract."
+        )
 
 
 def _persisted_run(result: TrainingResult) -> RunManifest:
@@ -227,7 +317,33 @@ def _persisted_run(result: TrainingResult) -> RunManifest:
     return persisted
 
 
-def _validate_pipeline_contract(result: TrainingResult) -> None:
+def _persisted_final_model(result: FinalModelResult) -> FinalModelManifest:
+    from mlforge.final_models.types import FinalModelManifest
+
+    path = result.manifest_path
+    if path.is_symlink() or not path.is_file():
+        raise ArtifactIntegrityError(
+            "Final-model result must reference its persisted regular-file manifest."
+        )
+    try:
+        content = path.read_text(encoding="utf-8")
+        persisted = FinalModelManifest.from_json(content)
+    except (OSError, UnicodeError, FinalModelStoreError) as error:
+        raise ArtifactIntegrityError(
+            "Could not validate the persisted final-model manifest."
+        ) from error
+    if persisted != result.manifest:
+        raise ArtifactIntegrityError(
+            "Final-model result does not match its persisted final-model manifest."
+        )
+    if path.stem != persisted.final_model_id:
+        raise ArtifactIntegrityError(
+            "Final-model manifest ID does not match its persisted filename."
+        )
+    return persisted
+
+
+def _validate_pipeline_contract(result: TrainingResult | FinalModelResult) -> None:
     try:
         check_is_fitted(result.pipeline)
         actual_features = tuple(str(name) for name in result.pipeline.feature_names_in_)
@@ -302,11 +418,35 @@ class LocalArtifactStore:
             raise ArtifactFormatError(f"Could not serialize fitted pipeline: {error}") from error
         manifest = _manifest(result, pipeline_bytes)
         verify_run_manifest(manifest, persisted_run)
+        return self._write(manifest, pipeline_bytes)
+
+    def save_final(self, result: FinalModelResult) -> SavedArtifact:
+        """Serialize an explicitly fitted full-dataset model with verified selection lineage."""
+        from mlforge.final_models.types import FinalModelResult
+
+        if not isinstance(result, FinalModelResult):
+            raise ArtifactFormatError("Final artifact input must be a FinalModelResult.")
+        if result.manifest.status is not RunStatus.SUCCEEDED:
+            raise ArtifactFormatError(
+                "Only a successful final-model result can become an artifact."
+            )
+        persisted = _persisted_final_model(result)
+        _validate_pipeline_contract(result)
+        try:
+            pipeline_bytes = pickle.dumps(result.pipeline, protocol=5)
+        except (TypeError, ValueError, pickle.PickleError) as error:
+            raise ArtifactFormatError(f"Could not serialize fitted pipeline: {error}") from error
+        manifest = _final_model_manifest(result, pipeline_bytes)
+        verify_final_model_manifest(manifest, persisted)
+        return self._write(manifest, pipeline_bytes)
+
+    def _write(self, manifest: ArtifactManifest, pipeline_bytes: bytes) -> SavedArtifact:
+        """Atomically publish one already validated manifest and payload."""
         root = self._resolved_root(create=True)
-        final_path = root / f"{manifest.run_id}{ARTIFACT_SUFFIX}"
+        final_path = root / f"{manifest.model_id}{ARTIFACT_SUFFIX}"
         if final_path.exists():
             raise ArtifactPathError(f"Artifact already exists and is immutable: {final_path}")
-        temporary_path = root / f".{manifest.run_id}.{uuid4()}.tmp"
+        temporary_path = root / f".{manifest.model_id}.{uuid4()}.tmp"
         try:
             with temporary_path.open("x+b") as stream:
                 with zipfile.ZipFile(stream, mode="w", compression=zipfile.ZIP_STORED) as archive:

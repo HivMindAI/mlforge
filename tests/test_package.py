@@ -65,6 +65,7 @@ import mlforge
 import mlforge.artifacts
 import mlforge.config
 import mlforge.errors
+import mlforge.final_models
 import mlforge.inference
 import mlforge.logging_config
 

@@ -224,6 +224,81 @@ def build_preprocessor(
     )
 
 
+def build_final_preprocessor(
+    features: pd.DataFrame,
+    *,
+    config: PreprocessingConfig | None = None,
+    overrides: FeatureOverrides | None = None,
+) -> ColumnTransformer:
+    """Build an unfitted transformer for an explicit all-row final-model fit."""
+    _validate_feature_frame(features)
+    effective_config = config or PreprocessingConfig()
+    schema = infer_feature_schema(features, overrides=overrides)
+    _validate_finite_numeric_features(
+        features,
+        schema.numeric_features,
+        partition="final-model training",
+    )
+    transformers: list[tuple[str, Pipeline, list[str]]] = []
+    if schema.numeric_features:
+        numeric_steps: list[tuple[str, Any]] = [
+            (
+                "imputer",
+                SimpleImputer(
+                    strategy=effective_config.numeric_imputation.value,
+                    keep_empty_features=True,
+                ),
+            )
+        ]
+        if effective_config.scale_numeric:
+            numeric_steps.append(("scaler", StandardScaler()))
+        transformers.append(
+            ("numeric", Pipeline(steps=numeric_steps), list(schema.numeric_features))
+        )
+    if schema.categorical_features:
+        fill_value = effective_config.categorical_fill_value
+        collisions = sorted(
+            name
+            for name in schema.categorical_features
+            if bool(features[name].eq(fill_value).fillna(False).any())
+        )
+        if collisions:
+            names = ", ".join(repr(name) for name in collisions)
+            raise PreprocessingError(
+                f"Categorical fill value {fill_value!r} already occurs in final-model columns: "
+                f"{names}. Configure a distinct fill value during model selection."
+            )
+        categorical_pipeline = Pipeline(
+            steps=[
+                (
+                    "to_object",
+                    FunctionTransformer(
+                        _categorical_object_frame,
+                        validate=False,
+                        feature_names_out="one-to-one",
+                    ),
+                ),
+                (
+                    "imputer",
+                    SimpleImputer(
+                        strategy="constant",
+                        fill_value=fill_value,
+                        keep_empty_features=True,
+                    ),
+                ),
+                ("encoder", OneHotEncoder(handle_unknown="ignore")),
+            ]
+        )
+        transformers.append(
+            ("categorical", categorical_pipeline, list(schema.categorical_features))
+        )
+    return ColumnTransformer(
+        transformers=transformers,
+        remainder="drop",
+        verbose_feature_names_out=True,
+    )
+
+
 def build_model_pipeline(
     split: DatasetSplit,
     estimator: BaseEstimator,
@@ -244,6 +319,31 @@ def build_model_pipeline(
             (
                 "preprocessor",
                 build_preprocessor(split, config=config, overrides=overrides),
+            ),
+            ("estimator", estimator_copy),
+        ]
+    )
+
+
+def build_final_model_pipeline(
+    features: pd.DataFrame,
+    estimator: BaseEstimator,
+    *,
+    config: PreprocessingConfig | None = None,
+    overrides: FeatureOverrides | None = None,
+) -> Pipeline:
+    """Return an unfitted pipeline intended to learn from every selected dataset row."""
+    if not isinstance(estimator, BaseEstimator):
+        raise PreprocessingError("Estimator must follow scikit-learn's BaseEstimator convention.")
+    try:
+        estimator_copy = clone(estimator)
+    except (TypeError, ValueError) as error:
+        raise PreprocessingError(f"Estimator could not be cloned safely: {error}") from error
+    return Pipeline(
+        steps=[
+            (
+                "preprocessor",
+                build_final_preprocessor(features, config=config, overrides=overrides),
             ),
             ("estimator", estimator_copy),
         ]

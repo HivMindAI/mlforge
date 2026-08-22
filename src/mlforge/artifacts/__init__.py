@@ -5,6 +5,7 @@ from mlforge.artifacts.store import (
     LocalArtifactStore,
     inspect_artifact,
     load_artifact,
+    verify_final_model_manifest,
     verify_run_manifest,
 )
 from mlforge.artifacts.types import (
@@ -12,6 +13,7 @@ from mlforge.artifacts.types import (
     ARTIFACT_SERIALIZATION_FORMAT,
     ArtifactEnvironment,
     ArtifactFeature,
+    ArtifactLineageKind,
     ArtifactManifest,
     FeatureRole,
     LoadedArtifact,
@@ -24,6 +26,7 @@ __all__ = [
     "ARTIFACT_SUFFIX",
     "ArtifactEnvironment",
     "ArtifactFeature",
+    "ArtifactLineageKind",
     "ArtifactManifest",
     "FeatureRole",
     "LoadedArtifact",
@@ -31,5 +34,6 @@ __all__ = [
     "SavedArtifact",
     "inspect_artifact",
     "load_artifact",
+    "verify_final_model_manifest",
     "verify_run_manifest",
 ]

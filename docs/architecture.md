@@ -6,8 +6,9 @@ This document distinguishes the implemented local workflow from later target cap
 current implementation includes packaging, typed application configuration, domain errors,
 explicit CLI-owned logging, validated local CSV ingestion, deterministic profiling, task-aware
 splitting, leakage-safe preprocessing, five baseline estimators, held-out evaluation, immutable
-local run manifests, compatible-run comparison, trusted-local fitted artifacts, schema-validated
-batch inference, shared-fold classification benchmarking, and thin CLI adapters.
+local run manifests, compatible-run comparison, shared-fold classification benchmarking, explicit
+selection-driven all-row fitting, trusted-local fitted artifacts, schema-validated batch inference,
+and thin CLI adapters.
 
 MLForge's first product boundary is local tabular supervised machine learning. A user supplies a
 CSV dataset and explicit target, trains a classification or regression pipeline, receives metrics
@@ -24,8 +25,9 @@ feature stores, and automatic deployment are outside the initial scope.
    separation.
 3. **Explicit inputs and outputs.** Typed configuration and result objects replace hidden globals
    and process-wide mutable state.
-4. **Reproducibility over magic.** Run and artifact records capture data identity, configuration,
-   dependency versions, random seeds, metrics, warnings, and explicit lineage hashes.
+4. **Reproducibility over magic.** Run, selection, final-model, and artifact records capture data
+   identity, configuration, dependency versions, random seeds, metrics where meaningful, warnings,
+   and explicit lineage hashes.
 5. **Local before distributed.** Filesystem implementations establish semantics before database,
    queue, API, or object-storage adapters are considered.
 6. **Small public surface.** APIs become public only after their behavior is exercised by the
@@ -50,6 +52,10 @@ flowchart LR
     O --> P["Fresh fold-local pipelines + metrics"]
     P --> Q["Immutable cross-validation manifest"]
     R["Cross-validation configuration"] --> Q
+    Q --> S["Explicit all-row final fit"]
+    B --> S
+    S --> T["Immutable final-model manifest"]
+    S --> H
     F --> H["Versioned trusted artifact"]
     H --> I
     H --> J["Schema-validating predictor"]
@@ -64,7 +70,9 @@ mutate an earlier run. A fitted artifact uses its successful run UUID as identit
 canonical run-manifest SHA-256, preserving a one-way reference without mutating the run record.
 Cross-validation is a separate evidence path: every estimator uses the same ordered fold
 fingerprints, but preprocessing and model state are fitted independently within each training
-fold. Its aggregate does not represent one deployable fitted pipeline.
+fold. Its aggregate does not represent one fitted pipeline. Explicit final fitting verifies that
+selection and dataset, reconstructs the winning contract, fits every selected row, and creates a
+new immutable lineage anchor without inventing a performance metric.
 
 ## Package responsibilities
 
@@ -75,6 +83,7 @@ fold. Its aggregate does not represent one deployable fitted pipeline.
 | `mlforge.training` | Implemented | Baseline estimator selection, complete pipeline fitting, held-out prediction and task metrics | Run storage, model serialization, or database/HTTP concerns |
 | `mlforge.runs` | Implemented | Run identity, strict versioned manifests, create-only atomic local storage, compatible-run comparison | Fitting estimators or storing model binaries |
 | `mlforge.benchmarks` | Implemented | Holdout and shared-fold classification orchestration, explicit-metric ranking, failure evidence, fitted holdout winner selection, and immutable aggregate storage | Estimator implementations, deployment fitting, service infrastructure, or UI rendering |
+| `mlforge.final_models` | Implemented | Persisted CV-selection verification, exact-dataset revalidation, all-row classification fitting, terminal manifests, and failure evidence | Metric estimation, arbitrary estimator tuning, artifact bytes, or service infrastructure |
 | `mlforge.artifacts` | Implemented | Versioned manifests, atomic archives, integrity checks, exact-environment and explicit-trust loading | Metric decisions, remote provenance, or deployment |
 | `mlforge.inference` | Implemented | Raw feature-schema validation and structured dataframe/CSV batch prediction | Training or online serving infrastructure |
 | `mlforge.config` | Implemented | Immutable application settings and explicit source precedence | Environment reads at import time |
@@ -88,8 +97,9 @@ itself, so empty packages and placeholder interfaces are intentionally avoided.
 ## Dependency direction
 
 The CLI depends on application-facing functions. Application functions compose dataset, pipeline,
-training, run, artifact, and inference modules. Core modules may use shared configuration and domain
-errors, but shared modules must not import the CLI or future infrastructure adapters.
+training, run, benchmark, final-model, artifact, and inference modules. Core modules may use shared
+configuration and domain errors, but shared modules must not import the CLI or future
+infrastructure adapters.
 
 Initial external dependencies should remain narrow:
 
@@ -200,11 +210,29 @@ winner = result.manifest.winner
 
 This winner is an immutable selection record, not a fitted pipeline. Each fold constructs a new
 pipeline around a fresh estimator clone, fits it only on training rows, and evaluates its paired
-validation rows. A separate final training policy is required before artifact creation.
+validation rows. Final fitting is a separate explicit application service:
 
-`TrainingResult.pipeline` is fitted and usable in the current process. Artifact persistence is a
-separate explicit operation because run metadata and executable model bytes have different storage
-and security contracts. Trusted loading requires an opt-in at the call site.
+```python
+from mlforge.artifacts import LocalArtifactStore
+from mlforge.final_models import LocalFinalModelStore, fit_selected_model
+
+final_model = fit_selected_model(
+    dataset,
+    result,
+    final_model_store=LocalFinalModelStore(Path("mlfinalmodels")),
+    artifact_store=LocalArtifactStore(Path("artifacts")),
+)
+```
+
+The service accepts only the persisted rank-one cross-validation result. It revalidates the source
+and in-memory dataset, reconstructs the exact selected preprocessing and estimator parameters,
+fits every selected row, and writes a new final-model manifest. It never evaluates the pipeline on
+its own training rows or copies cross-validation values into a new metric field.
+
+`TrainingResult.pipeline` is fitted and usable in the current process, and its artifact persistence
+remains a separate explicit operation. The final-model application service coordinates its own
+immutable fit record and prediction-ready artifact because producing both is its declared outcome.
+Trusted loading remains a separate opt-in at the call site.
 
 Configuration and result objects should be serializable and typed. Lower-level helpers stay in
 their owning modules instead of being re-exported automatically from `mlforge`.
@@ -376,19 +404,38 @@ all-failed aggregate is persisted before `BenchmarkFailedError` is raised.
 
 `CrossValidationManifest` has its own schema version and create-only
 `LocalCrossValidationStore`. It is selection evidence and intentionally does not contain or return
-a fitted winner. Final fitting, hyperparameter tuning, nested evaluation, confidence intervals,
-and resource isolation are separate policies; the ordinary fold mean must not be presented as an
-untouched post-selection test estimate.
+a fitted winner. Hyperparameter tuning, nested evaluation, confidence intervals, and resource
+isolation remain separate policies; the ordinary fold mean must not be presented as an untouched
+post-selection test estimate.
+
+## Final-model semantics
+
+`fit_selected_model` requires a validated `CrossValidationResult` whose regular-file manifest still
+matches its in-memory value and benchmark UUID. The supplied `LoadedDataset` must match the
+selection's SHA-256, byte size, dimensions, target, encoding, and delimiter. Its columns, dtypes,
+row count, and dataframe values must still match ingestion metadata and a fresh read of the source.
+
+The service reconstructs the selected preprocessing, feature overrides, random seed, estimator,
+and shallow estimator parameters. Any drift stops before fitting. A new preprocessing/model
+pipeline then learns from every selected row. `FinalModelManifest` records its own UUID, terminal
+status, exact selection and fold-plan digests under `selection_evidence`, dataset and environment
+snapshots, a metric-free `final_fit` block with `fit_scope=all_rows`, the intended artifact identity
+and executable-payload SHA-256/size, warnings, and safe failure details. It has an independent
+create-only `LocalFinalModelStore`. Successful records contain no final-model metrics because
+training-set scores would not be evaluation evidence. The service returns only after the existing
+artifact store has persisted and reverified the matching prediction-ready archive.
 
 ## Artifact and inference semantics
 
-`LocalArtifactStore` publishes one create-only `<run-id>.mlforge` archive per successful run. The
-temporary archive is fully written and flushed before a same-filesystem hard link atomically makes
+`LocalArtifactStore` publishes one create-only `<model-id>.mlforge` archive per successful evaluated
+run or final model. The temporary archive is fully written and flushed before a same-filesystem hard link atomically makes
 the final name visible. The archive contains exactly `manifest.json` and `pipeline.pkl` as stored,
 unencrypted ZIP members; nothing is extracted. Its strict versioned manifest records the ordered
 raw feature names, training pandas dtypes, numeric/categorical roles, target, task, categorical
-missing marker, exact runtime versions, pipeline size and SHA-256, and canonical run-manifest
-SHA-256. Saving first verifies that `TrainingResult` still matches the persisted immutable run.
+missing marker, exact runtime versions, pipeline size and SHA-256, and canonical lineage-manifest
+SHA-256. Version 1 preserves evaluated training-run lineage. Version 2 records a generic model ID
+and explicit `final-model` lineage kind. Saving first verifies that the result still matches its
+persisted immutable run or final-model record.
 
 Safe inspection bounds the archive and member sizes, rejects unexpected structure, parses the JSON
 schema, and streams the pipeline payload through SHA-256 without deserializing it. Trusted loading
@@ -425,12 +472,13 @@ and are never embedded in normal logs.
   behavior with small deterministic fixtures.
 - **Integration tests** exercise CSV-to-profile behavior, real scikit-learn preprocessing/model
   pipelines, all five MLForge training baselines, holdout and cross-validation benchmark
-  orchestration, fold-local preprocessing boundaries, artifact save/load parity, schema-validated
-  dataframe/CSV prediction, CLI workflows, and the bundled runnable examples.
+  orchestration, fold-local preprocessing boundaries, all-row final fitting, artifact save/load
+  parity, schema-validated dataframe/CSV prediction, CLI workflows, and bundled runnable examples.
 - **Interface tests** pin public function signatures, serialized schema versions, CLI output/exit
   behavior, and storage adapter contracts.
 - **Edge-case tests** cover malformed data, tiny datasets, missing values, unknown categories,
-  incompatible schemas, failed training, corrupt artifacts, and atomic-write recovery.
+  incompatible schemas, changed selection/data lineage, failed training/final fitting, corrupt
+  artifacts, and atomic-write recovery.
 - **Packaging tests** install the built wheel into a clean environment and run import/CLI smoke
   checks.
 - **Static checks** run Ruff and strict mypy against both production and test code on every
@@ -440,9 +488,10 @@ Tests should assert externally meaningful behavior rather than mirror private im
 
 ## Development versus production
 
-The development product is a single-process local library and CLI with filesystem run-manifest and
-trusted-artifact storage plus batch inference. Its trust decision is local and explicit; it does
-not claim remote provenance, adversarial execution isolation, or online serving.
+The development product is a single-process local library and CLI with filesystem run, benchmark,
+final-model, and trusted-artifact storage plus batch inference. Its trust decision is local and
+explicit; it does not claim remote provenance, adversarial execution isolation, online serving,
+or an untouched performance estimate after selection.
 
 A production multi-user product would additionally need transactional persistence, isolated job
 execution, access control, secret management, shared artifact storage, rate/resource limits,

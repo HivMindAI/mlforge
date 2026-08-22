@@ -5,13 +5,13 @@
 [![CI](https://github.com/HivMindAI/mlforge/actions/workflows/ci.yml/badge.svg)](https://github.com/HivMindAI/mlforge/actions/workflows/ci.yml)
 [![License](https://img.shields.io/github/license/HivMindAI/mlforge)](LICENSE)
 
-**A reproducible Python toolkit for training, evaluating, benchmarking, and comparing tabular
+**A reproducible Python toolkit for training, evaluating, selecting, and fitting tabular
 machine-learning models with leakage-safe preprocessing and deterministic cross-validation.**
 
 MLForge is a local, library-first workflow built on pandas and scikit-learn. It turns a CSV and an
 explicit target into inspectable evidence: validated data, fair model comparisons, immutable JSON
 manifests, trusted-local model artifacts, and schema-checked predictions. It is deliberately small,
-single-process, and honest about what it does not yet implement.
+single-process, and honest about what it does not implement.
 
 ## Quick start
 
@@ -43,6 +43,17 @@ Leaderboard:
 Best observed mean: logistic-regression ranked first.
 Note: cross-validation selects an estimator; it does not fit a final deployment model.
 ```
+
+Final fitting is a separate, explicit decision. Copy the benchmark UUID from that command and run:
+
+```bash
+mlforge finalize examples/customer_churn.csv --target churn --benchmark-id BENCHMARK_ID --benchmarks-dir mlbenchmarks --final-models-dir mlfinalmodels --artifacts-dir artifacts
+```
+
+MLForge verifies the persisted selection and exact dataset, refits the rank-one estimator on all
+rows, and creates a new immutable final-model manifest plus trusted-local artifact. The recorded
+cross-validation score remains selection evidence; it is not relabeled as post-selection test
+performance.
 
 ![MLForge cross-validation benchmark terminal output](https://raw.githubusercontent.com/HivMindAI/mlforge/main/docs/assets/benchmark-terminal.svg)
 
@@ -103,15 +114,23 @@ modeling, persistence, and trust boundaries are small enough to understand and t
 - Identical ordered fold fingerprints for every estimator.
 - Per-fold metrics, arithmetic means, population standard deviations, stability-aware ranking,
   warnings, timing, and failure location.
-- Selection evidence only: no fitted final model and no nested-tuning performance claim.
+- Selection evidence only: no nested-tuning or untouched post-selection performance claim.
+
+### Explicit final-model fitting
+
+- Accepts only a persisted successful cross-validation result and its exact selected dataset.
+- Reconstructs the recorded preprocessing, feature-role, seed, estimator, and parameter contract.
+- Fits one new preprocessing/model pipeline on every selected row without inventing new metrics.
+- Writes a create-only final-model manifest and a version-2 artifact lineage record.
+- Reuses safe inspection, explicit trusted loading, schema validation, and batch prediction.
 
 ## Reliability guarantees
 
 - **Fit after split:** no data-derived transformer state is learned from validation rows.
 - **Comparable evidence:** dataset bytes, target, configuration, seed, and exact partitions are
   recorded and checked before comparison.
-- **Immutable local history:** run, holdout-benchmark, and cross-validation manifests are atomically
-  created and never silently overwritten.
+- **Immutable local history:** run, benchmark, cross-validation, and final-model manifests are
+  atomically created and never silently overwritten.
 - **Bounded input handling:** CSV and artifact readers validate structure and enforce documented
   size limits.
 - **Fail-closed artifact loading:** untrusted, corrupt, incompatible, or structurally invalid
@@ -136,6 +155,8 @@ flowchart LR
     F --> H["Metrics + run manifest"]
     G --> I["Aggregates + leaderboard"]
     I --> J["Cross-validation manifest"]
+    J --> M["Explicit all-row final fit"]
+    M --> K
     H --> K["Trusted-local artifact"]
     K --> L["Schema validation + prediction"]
 ```
@@ -157,7 +178,9 @@ from mlforge.benchmarks import (
     LocalCrossValidationStore,
     cross_validate_benchmark,
 )
+from mlforge.artifacts import LocalArtifactStore
 from mlforge.datasets import load_csv
+from mlforge.final_models import LocalFinalModelStore, fit_selected_model
 from mlforge.pipelines import CrossValidationSplitConfig
 
 dataset = load_csv(Path("examples/customer_churn.csv"), target="churn")
@@ -172,12 +195,21 @@ result = cross_validate_benchmark(
 
 print(result.manifest.winner)
 print(result.manifest.to_json())
+
+final_model = fit_selected_model(
+    dataset,
+    result,
+    final_model_store=LocalFinalModelStore(Path("mlfinalmodels")),
+    artifact_store=LocalArtifactStore(Path("artifacts")),
+)
+print(final_model.manifest.to_json())
+print(final_model.artifact_path)
 ```
 
-Cross-validation deliberately returns an immutable selection record, not a fitted model. For the
-artifact and prediction workflow, see the runnable
-[`examples/train_and_predict.py`](examples/train_and_predict.py) and the
-[Python API reference](docs/api.md).
+Cross-validation deliberately returns an immutable selection record. `fit_selected_model` is the
+separate all-row refit-and-save step and never reports training-set metrics as evaluation. For the
+complete workflow, see [`examples/finalize_customer_churn.py`](examples/finalize_customer_churn.py)
+and the [Python API reference](docs/api.md).
 
 ## CLI
 
@@ -190,6 +222,7 @@ output is useful.
 | Train | `mlforge train DATA.csv --target TARGET --task classification --estimator logistic-regression --runs-dir mlruns` |
 | Holdout benchmark | `mlforge benchmark DATA.csv --target TARGET --metric balanced_accuracy --runs-dir mlruns --benchmarks-dir mlbenchmarks` |
 | Cross-validation | `mlforge benchmark DATA.csv --target TARGET --metric balanced_accuracy --cross-validation-folds 5 --benchmarks-dir mlbenchmarks` |
+| Fit selected final model | `mlforge finalize DATA.csv --target TARGET --benchmark-id BENCHMARK_ID --benchmarks-dir mlbenchmarks --final-models-dir mlfinalmodels --artifacts-dir artifacts` |
 | Inspect a run | `mlforge runs show RUN_ID --runs-dir mlruns --json` |
 | Inspect an artifact safely | `mlforge artifacts inspect artifacts/RUN_ID.mlforge --json` |
 | Predict from a trusted artifact | `mlforge predict artifacts/RUN_ID.mlforge FEATURES.csv --trust-artifact --output predictions.csv` |
@@ -216,8 +249,8 @@ python -m pip install -e ".[dev]"
 
 ## Validation evidence
 
-The v0.2.1 candidate has a 210-test behavioral suite and enforces a conservative 80% statement
-coverage floor (84.66% measured on Python 3.12 during preparation). CI covers Ubuntu on Python
+The v0.3.0 release has a 225-test behavioral suite and enforces a conservative 80% statement
+coverage floor (83.68% measured on Python 3.12 during preparation). CI covers Ubuntu on Python
 3.11/3.12 and Windows on Python 3.12, with Ruff, formatting, strict mypy, pytest, package builds,
 `pip check`, and installed-wheel smoke tests. Offline real-data tests exercise scikit-learn's breast
 cancer and diabetes datasets; separate release validation covers Iris, Wine, and breast cancer
@@ -262,6 +295,7 @@ mlforge/
 |  |- pipelines/         # Splits, folds, feature roles, and preprocessing
 |  |- training/          # Baseline fitting and evaluation
 |  |- benchmarks/        # Holdout/CV orchestration, ranking, and manifests
+|  |- final_models/       # Verified selection lineage and explicit all-row fitting
 |  |- runs/              # Immutable experiment records and comparison
 |  `- artifacts/         # Trusted-local model persistence
 |- tests/                # Unit, integration, API, CLI, edge-case, and real-data tests
@@ -271,16 +305,22 @@ mlforge/
 `- .github/workflows/    # Cross-platform CI and trusted release publishing
 ```
 
-## Current limits and roadmap
+## Project status and current limits
 
-MLForge currently supports local, single-process tabular classification/regression, while
-cross-validation is classification-only. It does **not** provide final-model fitting, hyperparameter
-tuning, nested evaluation, an HTTP API, a dashboard, shared storage, distributed execution, a model
-registry, authentication, deployment, or monitoring.
+**MLForge v0.3.0 is the feature-complete local portfolio release. The project is in maintenance
+mode.** Future changes should normally be limited to real bug fixes, security fixes, compatibility
+fixes, documentation corrections, and other justified maintenance work.
 
-Milestone 9 service infrastructure remains conditional on real multi-user requirements. Final-model
-fitting is a separate post-v0.2.1 product decision. The [roadmap](ROADMAP.md) records these boundaries
-so planned work is not presented as shipped functionality.
+MLForge currently supports local, single-process tabular classification/regression. Cross-validation
+and selection-driven final fitting are classification-only. It does **not** provide hyperparameter
+tuning, nested evaluation, an untouched post-selection test estimate, regression finalization, an
+HTTP API, a dashboard, shared storage, distributed execution, a model registry, authentication,
+deployment, or monitoring.
+
+Milestone 9 service infrastructure is postponed and remains conditional on real multi-user
+requirements; it is not active development. The
+[roadmap](ROADMAP.md) records these boundaries so planned work is not presented as shipped
+functionality.
 
 ## Contributing, security, and license
 

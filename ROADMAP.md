@@ -8,8 +8,8 @@ owner accepts the current one with `DONE`.
 
 - **Critical:** Milestones 0-4 establish a correct, usable local workflow.
 - **Important:** Milestones 5-6 make artifacts usable and prepare a responsible public release.
-- **Local benchmarking:** Milestones 7-8 are accepted for the v0.2.0 local release. Milestones 9+
-  remain conditional and require separate product decisions before implementation.
+- **Feature-complete local product:** Milestones 7-8.1 complete the local workflow in v0.3.0.
+  Milestones 9+ are postponed conditional proposals, not active development commitments.
 
 ## Critical milestones
 
@@ -244,9 +244,53 @@ classification benchmark, expose mean and variability for every metric, keep all
 out of their fold's fitted preprocessing, record a strict immutable aggregate, and clearly separate
 model-selection evidence from final model fitting and nested tuning claims.
 
+### Milestone 8.1 - Explicit selection-driven final-model fitting
+
+**Status:** Accepted by the project owner on 2026-08-22; complete for v0.3.0.
+
+**What changes:** Verify one persisted successful cross-validation result and the exact selected
+dataset; reconstruct the rank-one estimator, preprocessing, feature overrides, seed, and recorded
+parameters; fit one new pipeline on every selected row; persist a separate immutable final-model
+manifest; extend artifact lineage without breaking version-1 training-run inspection/loading; and
+expose the workflow through Python, CLI, examples, and installed-wheel smoke validation.
+
+**Why:** Cross-validation identifies a supported estimator but intentionally returns no fitted
+pipeline. A developer needs one explicit, auditable step that uses all selected data without
+pretending training-set scores or reused cross-validation means are new performance evidence.
+
+**Affected modules:** `src/mlforge/final_models/`, final-fit pipeline construction, artifact schema
+and persistence, CLI, examples, smoke validation, tests, and user/architecture/security/API docs.
+
+**Dependencies:** Milestone 8. The first version remains local, single-process,
+classification-only, scikit-learn-only, and restricted to MLForge's persisted cross-validation
+winner and exact dataset.
+
+**Testing:** Full-row fitting boundaries, selection/dataset/parameter drift, success and terminal
+failure manifests, create-only storage, artifact version compatibility and lineage, trusted load,
+prediction, CLI JSON/human behavior, runnable examples, clean-package smoke, and the full quality
+suite.
+
+**Done means:** One explicit command and API convert verified cross-validation selection evidence
+into a fitted all-row artifact with immutable lineage, while refusing changed evidence/data and
+making no new evaluation or deployment-performance claim.
+
+## Project state after v0.3.0
+
+**Status:** Feature complete / maintenance mode.
+
+v0.3.0 completes MLForge's intended local, single-process workflow. Future changes should normally
+be limited to real bug fixes, security fixes, compatibility fixes, documentation corrections, and
+other justified maintenance work. No additional feature milestone begins automatically.
+
+Milestone 9 remains postponed and conditional. MLForge does not claim an HTTP API, web UI,
+background workers, shared experiment storage, distributed execution, multi-user support,
+authentication, hosted services, or a model-registry server.
+
 ## Conditional improvements
 
 ### Milestone 9 - Service adapters and shared experiment storage
+
+**Status:** Postponed / conditional; untouched by v0.3.0.
 
 **What changes:** Only if multi-user or remote execution is a demonstrated requirement, introduce a
 versioned HTTP API, transactional persistence, shared artifact storage, and background execution as
@@ -270,6 +314,8 @@ recovery.
 observable and recoverable, and no infrastructure concern leaks into core ML modules.
 
 ### Milestone 10 - Deployment, observability, and user interface
+
+**Status:** Postponed / conditional; not active development.
 
 **What changes:** Evaluate a web interface, online inference, model promotion/rollback, prediction
 telemetry, drift analysis, authentication/authorization, containerization, and production release

@@ -21,12 +21,16 @@ manifest field that silently enables loading.
 
 An artifact is one create-only ZIP archive containing exactly `manifest.json` and `pipeline.pkl` as
 uncompressed regular members. The loader rejects unexpected members, encryption, compression,
-oversized content, malformed or unsupported manifests, a filename/run-ID mismatch, and pipeline
+oversized content, malformed or unsupported manifests, a filename/model-ID mismatch, and pipeline
 bytes whose size or SHA-256 differs from the manifest. It never extracts archive paths to disk.
 
-The artifact manifest also records a SHA-256 of the canonical immutable run manifest. Saving fails
-unless the in-memory successful run still matches its persisted run file. Use
-`verify_run_manifest(artifact_manifest, run_manifest)` when independently checking lineage.
+The artifact manifest also records a SHA-256 of its canonical immutable lineage manifest. Version 1
+artifacts reference evaluated training runs. Version 2 final-model artifacts record an explicit
+`final-model` lineage kind and reference the final-model manifest, which in turn records the exact
+cross-validation selection digest and the intended artifact payload size/SHA-256. Saving fails
+unless the in-memory successful result still matches its persisted record and the newly serialized
+pipeline matches that artifact contract. Use `verify_run_manifest(...)` or
+`verify_final_model_manifest(...)` when independently checking lineage.
 
 These checks detect corruption and changes relative to the manifest. They do not authenticate the
 manifest itself: an attacker who can replace the archive can replace both the payload and its
@@ -65,10 +69,12 @@ these JSON values before publishing or attaching them to an issue.
 
 1. Train the model yourself or establish the artifact's source and chain of custody.
 2. Inspect the artifact without trust-enabled loading.
-3. Compare its run UUID and canonical run-manifest hash with the expected local run record.
+3. Compare its model UUID, lineage kind, and canonical manifest hash with the expected local run or
+   final-model record.
 4. Reproduce the exact dependency environment recorded in the artifact.
 5. Only then pass `trusted=True` or `--trust-artifact`.
-6. Keep generated `artifacts/`, `mlruns/`, datasets, and prediction outputs out of Git.
+6. Keep generated `artifacts/`, `mlruns/`, `mlbenchmarks/`, `mlfinalmodels/`, datasets, and
+   prediction outputs out of Git.
 
 Do not load artifacts received through untrusted email, public file sharing, issue attachments, or
 unknown URLs. A checksum supplied beside an artifact by the same untrusted source is not an

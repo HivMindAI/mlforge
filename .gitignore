@@ -9,6 +9,7 @@ __pycache__/
 .codex_tmp/
 /tmp/
 /output/
+/.mlforge-web/
 
 # Coverage
 .coverage

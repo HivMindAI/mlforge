@@ -79,3 +79,36 @@ jobs:
           Set-Location $smokeRoot
           & "$env:GITHUB_WORKSPACE\.wheel-venv\Scripts\python.exe" `
             "$env:GITHUB_WORKSPACE\scripts\wheel_smoke.py"
+
+  private-deployment:
+    name: Private deployment smoke
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Validate Compose configuration
+        run: docker compose --file compose.private.yaml config
+
+      - name: Build private deployment images
+        run: docker compose --file compose.private.yaml build
+
+      - name: Start private deployment
+        run: docker compose --file compose.private.yaml up --detach
+
+      - name: Wait for browser-facing readiness
+        shell: bash
+        run: |
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:3000/api/health/ready; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose --file compose.private.yaml logs
+          exit 1
+
+      - name: Stop private deployment
+        if: always()
+        run: docker compose --file compose.private.yaml down --volumes

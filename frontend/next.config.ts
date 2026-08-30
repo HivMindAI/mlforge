@@ -7,6 +7,7 @@ const apiOrigin = (process.env.MLFORGE_API_ORIGIN ?? "http://127.0.0.1:8000").re
 
 const nextConfig: NextConfig = {
   agentRules: false,
+  output: "standalone",
   async rewrites() {
     return [
       {

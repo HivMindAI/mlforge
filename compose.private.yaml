@@ -1,0 +1,58 @@
+name: mlforge-private
+
+services:
+  api:
+    image: mlforge-api:private
+    build:
+      context: .
+      dockerfile: deployment/backend.Dockerfile
+    environment:
+      MLFORGE_WEB_WORKSPACE: /var/lib/mlforge
+      MLFORGE_WEB_MAX_UPLOAD_BYTES: ${MLFORGE_WEB_MAX_UPLOAD_BYTES:-104857600}
+    volumes:
+      - mlforge-data:/var/lib/mlforge
+    expose:
+      - "8000"
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - backend
+
+  web:
+    image: mlforge-web:private
+    build:
+      context: .
+      dockerfile: deployment/frontend.Dockerfile
+      args:
+        MLFORGE_API_ORIGIN: http://api:8000
+    environment:
+      MLFORGE_API_ORIGIN: http://api:8000
+    depends_on:
+      api:
+        condition: service_healthy
+        restart: true
+    ports:
+      - "127.0.0.1:${MLFORGE_PRIVATE_PORT:-3000}:3000"
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - backend
+      - edge
+
+networks:
+  backend:
+    internal: true
+  edge:
+
+volumes:
+  mlforge-data:

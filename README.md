@@ -279,6 +279,16 @@ npm run dev
 Open `http://localhost:3000`. Local upload bytes and SQLite metadata are written under the ignored
 `.mlforge-web/` workspace. Use Predictions to select a finalized model and submit a matching CSV.
 
+### Private deployment profile
+
+The repository includes a provider-neutral two-container profile for one trusted operator. It keeps
+the API on an internal network, binds the browser-facing port to host loopback, persists the complete
+workspace in one Docker volume, and supplies liveness/readiness probes. It must be reached through
+an SSH tunnel or a reviewed private access gateway; it is not safe for direct public exposure.
+
+See [private single-user deployment](docs/private-deployment.md) for the architecture, startup,
+backup, upgrade, rollback, and security boundaries.
+
 ## Validation evidence
 
 The v0.3.0 release has a 225-test behavioral suite and enforces a conservative 80% statement

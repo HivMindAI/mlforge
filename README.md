@@ -247,6 +247,38 @@ extra instead:
 python -m pip install -e ".[dev]"
 ```
 
+### Local web preview
+
+The local single-user web interface supports the application shell, dashboard,
+CSV upload, core-backed validation, explicit target selection, a real data overview, and persisted
+classification comparison configuration, execution, core-backed experiment results, and explicit
+rank-one model finalization. It also provides a Models screen for reviewing completed local models,
+their source evidence, input schema, and recorded runtime. Finalized local models can run
+schema-validated prediction CSVs, preview the first 20 results, and download the complete output.
+The Experiments screen lists saved configurations and durable execution states, with links to the
+existing dataset metadata, benchmark evidence, failure details, and finalized model information.
+The interface uses a responsive modal navigation on smaller screens, visible keyboard focus, named
+scrollable table regions, associated form guidance, and text-based status labels. Important routes
+distinguish restrained loading, true empty, retryable server-error, validation-error, success, and
+partial-result states; the dashboard reflects persisted experiment history rather than sample data.
+Install its optional adapter and start the API from the repository root:
+
+```bash
+python -m pip install -e ".[dev,web]"
+python -m mlforge.web
+```
+
+In another terminal, start the frontend:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open `http://localhost:3000`. Local upload bytes and SQLite metadata are written under the ignored
+`.mlforge-web/` workspace. Use Predictions to select a finalized model and submit a matching CSV.
+
 ## Validation evidence
 
 The v0.3.0 release has a 225-test behavioral suite and enforces a conservative 80% statement
@@ -297,8 +329,10 @@ mlforge/
 |  |- benchmarks/        # Holdout/CV orchestration, ranking, and manifests
 |  |- final_models/       # Verified selection lineage and explicit all-row fitting
 |  |- runs/              # Immutable experiment records and comparison
-|  `- artifacts/         # Trusted-local model persistence
-|- tests/                # Unit, integration, API, CLI, edge-case, and real-data tests
+|  |- artifacts/         # Trusted-local model persistence
+|  `- web/               # Thin local FastAPI adapter over public core APIs
+|- frontend/             # Next.js single-user web interface
+|- tests/                # Unit, integration, HTTP, CLI, edge-case, and real-data tests
 |- examples/             # Runnable source-checkout workflows and small CSVs
 |- scripts/              # Release-tag and installed-wheel validation
 |- docs/                 # Tutorial, API, architecture, security, and release guidance
@@ -307,18 +341,24 @@ mlforge/
 
 ## Project status and current limits
 
-**MLForge v0.3.0 is the feature-complete local portfolio release. The project is in maintenance
-mode.** Future changes should normally be limited to real bug fixes, security fixes, compatibility
-fixes, documentation corrections, and other justified maintenance work.
+**MLForge v0.3.0 is the feature-complete local Python core.** The core remains stable while the
+single-user web interface is delivered in small reviewable phases without redesigning its ML
+algorithms or evidence model.
 
 MLForge currently supports local, single-process tabular classification/regression. Cross-validation
-and selection-driven final fitting are classification-only. It does **not** provide hyperparameter
-tuning, nested evaluation, an untouched post-selection test estimate, regression finalization, an
-HTTP API, a dashboard, shared storage, distributed execution, a model registry, authentication,
-deployment, or monitoring.
+and selection-driven final fitting are classification-only. The web preview has a local HTTP
+dataset boundary, dashboard, upload flow, data review, classification experiment configuration,
+a one-worker comparison/finalization runner with persisted job-level status, detailed
+cross-validation results, safe final-model artifact metadata, and a Models screen backed by verified
+local lineage. It also exposes a schema-validated prediction submission workflow for finalized
+local models, bounded result previews, and complete CSV downloads. MLForge does **not**
+provide hyperparameter tuning, nested
+evaluation, an untouched
+post-selection test estimate, regression finalization, shared storage, distributed execution,
+authentication, deployment, or monitoring.
 
-Milestone 9 service infrastructure is postponed and remains conditional on real multi-user
-requirements; it is not active development. The
+The separate core-roadmap service-infrastructure milestone is postponed and remains conditional on
+real multi-user requirements; it is not active development. The
 [roadmap](ROADMAP.md) records these boundaries so planned work is not presented as shipped
 functionality.
 

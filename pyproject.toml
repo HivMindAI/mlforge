@@ -35,8 +35,14 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
+web = [
+    "fastapi>=0.141,<1",
+    "python-multipart>=0.0.32,<0.1",
+    "uvicorn[standard]>=0.52,<1",
+]
 dev = [
     "build>=1.2",
+    "httpx2>=2.12,<3",
     "mypy>=2.3,<3",
     "numpy>=1.26,<2.5",
     "pandas-stubs>=3.0,<4",

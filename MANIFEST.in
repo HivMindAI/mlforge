@@ -8,6 +8,7 @@ include SECURITY.md
 include docs/api.md
 include docs/architecture.md
 include docs/compatibility.md
+include docs/private-deployment.md
 include docs/release-validation.md
 include docs/releasing.md
 include docs/security.md

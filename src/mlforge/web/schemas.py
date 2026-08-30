@@ -42,6 +42,15 @@ from mlforge.web.storage import (
 )
 
 
+class HealthResponse(BaseModel):
+    """Minimal process health information safe for deployment probes."""
+
+    model_config = ConfigDict(frozen=True)
+
+    status: Literal["ok"] = "ok"
+    version: str
+
+
 class DatasetTargetRequest(BaseModel):
     """An explicit target selection for one uploaded dataset."""
 

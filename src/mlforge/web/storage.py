@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from contextlib import closing
+from contextlib import closing, suppress
 from dataclasses import dataclass, replace
 from datetime import datetime
 from enum import StrEnum
@@ -218,6 +218,27 @@ class DatasetStore:
                 connection.commit()
         except (OSError, sqlite3.Error) as error:
             raise WebStorageError("Could not initialize the MLForge web workspace.") from error
+
+    def check_ready(self) -> None:
+        """Verify that metadata is readable and the durable upload volume is writable."""
+        probe_path = self.uploads_directory / f".health-{uuid4()}.tmp"
+        try:
+            with closing(self._connect()) as connection:
+                table = connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'datasets'"
+                ).fetchone()
+                if table is None:
+                    raise sqlite3.DatabaseError("The dataset metadata table is unavailable.")
+            with probe_path.open("xb") as probe:
+                probe.write(b"ready")
+                probe.flush()
+            probe_path.unlink()
+        except (OSError, sqlite3.Error) as error:
+            raise WebStorageError("The MLForge web workspace is not ready.") from error
+        finally:
+            if probe_path.exists():
+                with suppress(OSError):
+                    probe_path.unlink()
 
     def temporary_upload_path(self, dataset_id: UUID) -> Path:
         """Return a server-generated temporary CSV path inside the upload directory."""

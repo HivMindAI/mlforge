@@ -37,6 +37,7 @@ from mlforge.web.errors import (
     WebStorageError,
 )
 from mlforge.web.jobs import JobManager
+from mlforge.web.schemas import ErrorResponse, HealthResponse
 from mlforge.web.services import (
     DatasetService,
     ExperimentResultService,
@@ -131,6 +132,33 @@ def create_app(settings: WebSettings | None = None) -> FastAPI:
     app.include_router(job_router, prefix="/api")
     app.include_router(final_model_router, prefix="/api")
     app.include_router(prediction_router, prefix="/api")
+
+    @app.get(
+        "/api/health/live",
+        response_model=HealthResponse,
+        tags=["health"],
+    )
+    def health_live() -> HealthResponse:
+        """Report that the API process can serve requests."""
+        return HealthResponse(version=__version__)
+
+    @app.get(
+        "/api/health/ready",
+        response_model=HealthResponse,
+        responses={status.HTTP_503_SERVICE_UNAVAILABLE: {"model": ErrorResponse}},
+        tags=["health"],
+    )
+    def health_ready() -> HealthResponse | JSONResponse:
+        """Report whether the durable single-user workspace can accept work."""
+        try:
+            store.check_ready()
+        except WebStorageError:
+            return _error_response(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                code="not_ready",
+                message="The MLForge web workspace is unavailable.",
+            )
+        return HealthResponse(version=__version__)
 
     @app.exception_handler(UploadValidationError)
     async def handle_upload_validation(

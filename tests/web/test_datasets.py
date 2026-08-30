@@ -16,7 +16,9 @@ from fastapi.testclient import TestClient
 from mlforge.errors import FinalModelLineageError
 from mlforge.final_models import FinalModelResult
 from mlforge.web import create_app
+from mlforge.web.errors import WebStorageError
 from mlforge.web.settings import WebSettings
+from mlforge.web.storage import DatasetStore
 
 
 def _client(workspace: Path, *, max_upload_bytes: int = 100 * 1024 * 1024) -> TestClient:
@@ -54,6 +56,60 @@ def _wait_for_finalization(
     raise AssertionError(
         f"Finalization for {experiment_id} did not finish within {timeout} seconds."
     )
+
+
+def test_health_probes_distinguish_process_and_storage_readiness(tmp_path: Path) -> None:
+    """Deployment probes should be path-free and leave no storage artifacts."""
+    workspace = tmp_path / "web"
+
+    with _client(workspace) as client:
+        live = client.get("/api/health/live")
+        ready = client.get("/api/health/ready")
+
+    assert live.status_code == 200
+    assert ready.status_code == 200
+    assert live.json() == ready.json()
+    assert live.json()["status"] == "ok"
+    assert live.json()["version"]
+    assert not list((workspace / "uploads").glob(".health-*.tmp"))
+
+
+def test_readiness_failure_is_safe_and_does_not_change_liveness(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A storage outage should fail readiness without exposing local details."""
+
+    def fail_readiness(_store: DatasetStore) -> None:
+        raise WebStorageError("C:/private/mlforge.sqlite3 is unavailable")
+
+    monkeypatch.setattr(DatasetStore, "check_ready", fail_readiness)
+
+    with _client(tmp_path / "web") as client:
+        live = client.get("/api/health/live")
+        ready = client.get("/api/health/ready")
+
+    assert live.status_code == 200
+    assert ready.status_code == 503
+    assert ready.json() == {
+        "error": {
+            "code": "not_ready",
+            "message": "The MLForge web workspace is unavailable.",
+        }
+    }
+    assert "private" not in ready.text
+
+
+def test_readiness_rejects_a_missing_metadata_database(tmp_path: Path) -> None:
+    """A deleted database must not be silently replaced with a healthy empty file."""
+    workspace = tmp_path / "web"
+
+    with _client(workspace) as client:
+        (workspace / "mlforge.sqlite3").unlink()
+        ready = client.get("/api/health/ready")
+
+    assert ready.status_code == 503
+    assert ready.json()["error"]["code"] == "not_ready"
 
 
 def test_upload_returns_path_free_metadata_and_publishes_uuid_file(tmp_path: Path) -> None:

@@ -1,10 +1,15 @@
 include .env.example
+include .dockerignore
 include AGENTS.md
 include CHANGELOG.md
+include compose.private.yaml
 include CONTRIBUTING.md
 include LICENSE
 include ROADMAP.md
 include SECURITY.md
+include deployment/.env.example
+include deployment/backend.Dockerfile
+include deployment/frontend.Dockerfile
 include docs/api.md
 include docs/architecture.md
 include docs/compatibility.md
@@ -15,4 +20,18 @@ include docs/security.md
 include docs/tutorial.md
 include docs/assets/benchmark-terminal.svg
 recursive-include examples *.csv *.py
+include frontend/.env.example
+include frontend/README.md
+include frontend/eslint.config.mjs
+include frontend/next.config.ts
+include frontend/package-lock.json
+include frontend/package.json
+include frontend/playwright.config.ts
+include frontend/postcss.config.mjs
+include frontend/tsconfig.json
+recursive-include frontend/app *.css *.tsx
+recursive-include frontend/components *.tsx
+recursive-include frontend/lib *.ts
+recursive-include frontend/tests *.ts
 recursive-include scripts *.py
+recursive-include tests *.py

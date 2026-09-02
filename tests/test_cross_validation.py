@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -20,12 +21,14 @@ from mlforge.benchmarks import (
 )
 from mlforge.datasets import LoadedDataset, load_csv
 from mlforge.errors import BenchmarkFailedError, BenchmarkStoreError
-from mlforge.pipelines import CrossValidationSplitConfig
+from mlforge.pipelines import CrossValidationSplitConfig, TaskType
 from mlforge.runs import MetricValue, RunStatus
 from mlforge.training import (
     DUMMY_CLASSIFIER,
     LOGISTIC_REGRESSION,
     RANDOM_FOREST_CLASSIFIER,
+    RANDOM_FOREST_REGRESSOR,
+    RIDGE_REGRESSION,
     TrainingConfig,
 )
 from mlforge.training.estimators import create_estimator
@@ -38,6 +41,17 @@ def _classification_dataset(tmp_path: Path) -> LoadedDataset:
         target = "yes" if index % 4 in {0, 1} else "no"
         rows.append(f"{index},{segment},{target}")
     path = tmp_path / "cross-validation.csv"
+    path.write_text("\n".join(rows) + "\n", encoding="utf-8")
+    return load_csv(path, target="target")
+
+
+def _regression_dataset(tmp_path: Path) -> LoadedDataset:
+    rows = ["value,segment,target"]
+    for index in range(60):
+        segment = ("north", "south", "east")[index % 3]
+        segment_effect = {"north": 2.0, "south": -3.0, "east": 5.0}[segment]
+        rows.append(f"{index},{segment},{index * 4.5 + segment_effect}")
+    path = tmp_path / "regression-cross-validation.csv"
     path.write_text("\n".join(rows) + "\n", encoding="utf-8")
     return load_csv(path, target="target")
 
@@ -107,6 +121,60 @@ def test_cross_validation_is_deterministic_except_for_identity_and_timing(tmp_pa
     assert tuple((entry.estimator, entry.metrics, entry.rank) for entry in first.entries) == tuple(
         (entry.estimator, entry.metrics, entry.rank) for entry in second.entries
     )
+
+
+def test_regression_cross_validation_ranks_lower_rmse_and_round_trips(tmp_path: Path) -> None:
+    """Regression comparison should preserve task metrics and lower-is-better ranking evidence."""
+    result = cross_validate_benchmark(
+        _regression_dataset(tmp_path),
+        CrossValidationConfig(
+            task=TaskType.REGRESSION,
+            estimators=(RIDGE_REGRESSION, RANDOM_FOREST_REGRESSOR),
+            primary_metric="root_mean_squared_error",
+            split=CrossValidationSplitConfig(fold_count=3, random_seed=31),
+        ),
+        store=LocalCrossValidationStore(tmp_path / "regression-benchmarks"),
+    )
+
+    manifest = result.manifest
+    assert manifest.configuration.task == "regression"
+    assert manifest.configuration.primary_metric == "root_mean_squared_error"
+    assert manifest.winner is not None
+    assert manifest.winner.primary_metric_mean == min(
+        entry.primary_metric_mean
+        for entry in manifest.entries
+        if entry.primary_metric_mean is not None
+    )
+    for entry in manifest.entries:
+        directions = {metric.name: metric.higher_is_better for metric in entry.metrics}
+        assert directions == {
+            "mean_absolute_error": False,
+            "r2": True,
+            "root_mean_squared_error": False,
+        }
+        assert all(fold.metrics[0].name == "mean_absolute_error" for fold in entry.folds)
+    assert CrossValidationManifest.from_json(manifest.to_json()) == manifest
+
+
+def test_legacy_classification_cross_validation_manifest_remains_readable(
+    tmp_path: Path,
+) -> None:
+    """Schema v2 readers should preserve immutable v1 classification evidence."""
+    result = cross_validate_benchmark(
+        _classification_dataset(tmp_path),
+        CrossValidationConfig(
+            estimators=(DUMMY_CLASSIFIER, LOGISTIC_REGRESSION),
+            split=CrossValidationSplitConfig(fold_count=3),
+        ),
+        store=LocalCrossValidationStore(tmp_path / "benchmarks"),
+    )
+    legacy = result.manifest.to_dict()
+    legacy["schema_version"] = 1
+
+    restored = CrossValidationManifest.from_json(json.dumps(legacy))
+
+    assert restored.schema_version == 1
+    assert restored.configuration.task == "classification"
 
 
 def test_ranking_uses_mean_then_stability_then_estimator_identifier(

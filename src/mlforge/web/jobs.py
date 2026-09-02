@@ -18,7 +18,7 @@ from mlforge.benchmarks import (
 from mlforge.datasets import CsvLoadOptions, LoadedDataset, load_csv
 from mlforge.errors import FinalModelFailedError, MLForgeError
 from mlforge.final_models import FinalModelResult, LocalFinalModelStore, fit_selected_model
-from mlforge.pipelines import CrossValidationSplitConfig
+from mlforge.pipelines import CrossValidationSplitConfig, TaskType
 from mlforge.web.errors import FinalizationNotReadyError, WebError, WebStorageError
 from mlforge.web.settings import WebSettings
 from mlforge.web.storage import (
@@ -175,6 +175,7 @@ class JobManager:
                 options=CsvLoadOptions(max_file_size_bytes=self.settings.max_upload_bytes),
             )
             config = CrossValidationConfig(
+                task=TaskType(experiment.task),
                 estimators=experiment.estimators,
                 primary_metric=experiment.primary_metric,
                 split=CrossValidationSplitConfig(fold_count=experiment.fold_count),

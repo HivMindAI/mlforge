@@ -49,9 +49,15 @@ from mlforge.pipelines import (
     FeatureOverrides,
     NumericImputationStrategy,
     PreprocessingConfig,
+    TaskType,
 )
 from mlforge.runs import RunStatus
-from mlforge.training import DUMMY_CLASSIFIER, LOGISTIC_REGRESSION
+from mlforge.training import (
+    DUMMY_CLASSIFIER,
+    LOGISTIC_REGRESSION,
+    RANDOM_FOREST_REGRESSOR,
+    RIDGE_REGRESSION,
+)
 
 
 def _classification_dataset(tmp_path: Path, *, name: str = "selected.csv") -> LoadedDataset:
@@ -60,6 +66,16 @@ def _classification_dataset(tmp_path: Path, *, name: str = "selected.csv") -> Lo
         target = "yes" if index >= 30 else "no"
         rows.append(f"{index},{'north' if index % 3 else 'south'},{target}")
     path = tmp_path / name
+    path.write_text("\n".join(rows) + "\n", encoding="utf-8")
+    return load_csv(path, target="target")
+
+
+def _regression_dataset(tmp_path: Path) -> LoadedDataset:
+    rows = ["amount,region,target"]
+    for index in range(60):
+        region = "north" if index % 2 else "south"
+        rows.append(f"{index},{region},{index * 3.25 + (4 if region == 'north' else -2)}")
+    path = tmp_path / "regression-selected.csv"
     path.write_text("\n".join(rows) + "\n", encoding="utf-8")
     return load_csv(path, target="target")
 
@@ -111,12 +127,45 @@ def test_final_model_refits_every_row_and_persists_exact_selection_lineage(
     assert result.artifact_path.is_file()
     assert store.read(result.manifest.final_model_id) == result.manifest
     assert FinalModelManifest.from_json(result.manifest.to_json()) == result.manifest
+    legacy_payload = result.manifest.to_dict()
+    legacy_payload["schema_version"] = 1
+    assert FinalModelManifest.from_json(json.dumps(legacy_payload)).schema_version == 1
 
     preprocessor = result.pipeline.named_steps["preprocessor"]
     numeric_pipeline = preprocessor.named_transformers_["numeric"]
     scaler = numeric_pipeline.named_steps["scaler"]
     assert isinstance(scaler, StandardScaler)
     assert scaler.n_samples_seen_ == 60
+
+
+def test_regression_winner_refits_and_produces_numeric_predictions(tmp_path: Path) -> None:
+    """A persisted regression winner should use the same final-model and artifact boundary."""
+    dataset = _regression_dataset(tmp_path)
+    selection = _selection(
+        dataset,
+        tmp_path / "regression-benchmarks",
+        config=CrossValidationConfig(
+            task=TaskType.REGRESSION,
+            estimators=(RIDGE_REGRESSION, RANDOM_FOREST_REGRESSOR),
+            primary_metric="root_mean_squared_error",
+            split=CrossValidationSplitConfig(fold_count=3, random_seed=19),
+        ),
+    )
+
+    result = fit_selected_model(
+        dataset,
+        selection,
+        final_model_store=LocalFinalModelStore(tmp_path / "regression-final-models"),
+        artifact_store=LocalArtifactStore(tmp_path / "regression-artifacts"),
+    )
+    assert result.artifact_path is not None
+    loaded = load_artifact(result.artifact_path, trusted=True)
+    predictions = predict_frame(loaded, dataset.frame.drop(columns=["target"]))
+
+    assert result.manifest.configuration.task == "regression"
+    assert result.manifest.selection.primary_metric == "root_mean_squared_error"
+    assert predictions.row_count == len(dataset.frame)
+    assert all(isinstance(record.prediction, float) for record in predictions.predictions)
 
 
 def test_final_model_reconstructs_preprocessing_exactly(tmp_path: Path) -> None:

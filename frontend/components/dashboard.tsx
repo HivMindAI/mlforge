@@ -107,7 +107,8 @@ export function Dashboard() {
                     {experiment.dataset_name}
                   </Link>
                   <span>
-                    Classification, {experiment.model_count} models
+                    {experiment.task === "classification" ? "Classification" : "Regression"},{" "}
+                    {experiment.model_count} models
                   </span>
                 </div>
                 <div>

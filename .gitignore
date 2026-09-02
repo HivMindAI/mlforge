@@ -10,6 +10,8 @@ __pycache__/
 /tmp/
 /output/
 /.mlforge-web/
+/frontend/playwright-report/
+/frontend/test-results/
 
 # Coverage
 .coverage

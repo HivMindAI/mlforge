@@ -310,7 +310,7 @@ export function DatasetOverview({ datasetId }: DatasetOverviewProps) {
         <div>
           <strong>Training configuration</strong>
           <p>
-            {analysis.target.task_hint === "classification"
+            {analysis.target.task_hint !== "undetermined"
               ? "Configure a supported cross-validation model comparison."
               : "Review the training capabilities available for this target."}
           </p>
@@ -319,7 +319,7 @@ export function DatasetOverview({ datasetId }: DatasetOverviewProps) {
           className="primary-button"
           href={`/datasets/${analysis.dataset.dataset_id}/experiment/new`}
         >
-          {analysis.target.task_hint === "classification"
+          {analysis.target.task_hint !== "undetermined"
             ? "Configure comparison"
             : "Review training options"}
         </Link>

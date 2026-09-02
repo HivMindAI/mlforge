@@ -415,12 +415,13 @@ def test_invalid_experiment_configuration_returns_core_error_without_persisting(
     assert stored_count == (0,)
 
 
-def test_regression_target_cannot_create_unsupported_comparison(tmp_path: Path) -> None:
-    """The web adapter must not invent regression comparison orchestration."""
-    rows = "".join(f"{index},{index * 1.25}\n" for index in range(1, 26))
+def test_regression_experiment_runs_finalizes_and_predicts(tmp_path: Path) -> None:
+    """Regression should follow the same durable web workflow as classification."""
+    rows = "".join(f"{index},{index * 1.25 + 3}\n" for index in range(1, 31))
     content = f"feature,target\n{rows}".encode()
+    workspace = tmp_path / "web"
 
-    with _client(tmp_path / "web") as client:
+    with _client(workspace) as client:
         uploaded = client.post(
             "/api/datasets",
             files={"file": ("regression.csv", content, "text/csv")},
@@ -437,11 +438,46 @@ def test_regression_target_cannot_create_unsupported_comparison(tmp_path: Path) 
                 "fold_count": 5,
             },
         )
+        assert response.status_code == 201
+        experiment = response.json()
+        started = client.post(f"/api/experiments/{experiment['experiment_id']}/run")
+        terminal = _wait_for_job(client, started.json()["job_id"])
+        results = client.get(f"/api/experiments/{experiment['experiment_id']}/results")
+        finalization_started = client.post(
+            f"/api/experiments/{experiment['experiment_id']}/finalize"
+        )
+        assert finalization_started.status_code == 202
+        finalized = _wait_for_finalization(client, experiment["experiment_id"])
+        model_id = cast(str, finalized["final_model_id"])
+        model = client.get(f"/api/final-models/{model_id}")
+        prediction = client.post(
+            "/api/predictions",
+            data={"model_id": model_id},
+            files={"file": ("future.csv", b"feature\n31\n32\n", "text/csv")},
+        )
+        prediction_result = client.get(f"/api/predictions/{prediction.json()['prediction_id']}")
 
-    assert response.status_code == 422
-    assert response.json()["error"]["code"] == "invalid_experiment"
-    assert "only for classification" in response.json()["error"]["message"]
-    assert "detected the selected target as regression" in response.json()["error"]["message"]
+    assert experiment["task"] == "regression"
+    assert experiment["primary_metric"] == "root_mean_squared_error"
+    assert terminal["status"] == "complete"
+    assert results.status_code == 200
+    result_body = results.json()
+    assert result_body["task"] == "regression"
+    assert result_body["primary_metric"] == "root_mean_squared_error"
+    for entry in result_body["entries"]:
+        assert {metric["name"]: metric["higher_is_better"] for metric in entry["metrics"]} == {
+            "mean_absolute_error": False,
+            "r2": True,
+            "root_mean_squared_error": False,
+        }
+    assert finalized["status"] == "complete"
+    assert model.status_code == 200
+    assert model.json()["task"] == "regression"
+    assert prediction.status_code == 201
+    assert prediction_result.status_code == 200
+    preview = prediction_result.json()["preview_rows"]
+    assert len(preview) == 2
+    assert all(float(row["prediction"]) > 0 for row in preview)
 
 
 def test_experiment_job_runs_real_cross_validation_and_is_idempotent(tmp_path: Path) -> None:

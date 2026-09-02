@@ -12,7 +12,6 @@ from statistics import fmean, pstdev
 
 from mlforge.benchmarks.types import (
     DEFAULT_CLASSIFICATION_BENCHMARK_ESTIMATORS,
-    BenchmarkConfig,
     BenchmarkStatus,
     JsonObject,
     _array,
@@ -42,9 +41,32 @@ from mlforge.runs import (
     RunParameter,
     RunStatus,
 )
-from mlforge.training import CLASSIFICATION_ESTIMATORS, CLASSIFICATION_METRICS
+from mlforge.training import (
+    ALL_ESTIMATORS,
+    CLASSIFICATION_ESTIMATORS,
+    CLASSIFICATION_METRICS,
+    REGRESSION_ESTIMATORS,
+    REGRESSION_METRICS,
+)
 
-CROSS_VALIDATION_MANIFEST_SCHEMA_VERSION = 1
+CROSS_VALIDATION_MANIFEST_SCHEMA_VERSION = 2
+_SUPPORTED_CROSS_VALIDATION_MANIFEST_SCHEMA_VERSIONS = frozenset({1, 2})
+
+
+def _estimators_for_task(task: TaskType) -> frozenset[str]:
+    return CLASSIFICATION_ESTIMATORS if task is TaskType.CLASSIFICATION else REGRESSION_ESTIMATORS
+
+
+def _metrics_for_task(task: TaskType) -> tuple[str, ...]:
+    return CLASSIFICATION_METRICS if task is TaskType.CLASSIFICATION else REGRESSION_METRICS
+
+
+def _metric_higher_is_better(name: str) -> bool:
+    if name in CLASSIFICATION_METRICS or name == "r2":
+        return True
+    if name in REGRESSION_METRICS:
+        return False
+    raise BenchmarkStoreError(f"Cross-validation metric is unsupported: {name!r}.")
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,17 +78,45 @@ class CrossValidationConfig:
     split: CrossValidationSplitConfig = field(default_factory=CrossValidationSplitConfig)
     preprocessing: PreprocessingConfig = field(default_factory=PreprocessingConfig)
     feature_overrides: FeatureOverrides = field(default_factory=FeatureOverrides)
+    task: TaskType = TaskType.CLASSIFICATION
 
     def __post_init__(self) -> None:
-        BenchmarkConfig(
-            estimators=self.estimators,
-            primary_metric=self.primary_metric,
-            preprocessing=self.preprocessing,
-            feature_overrides=self.feature_overrides,
-        )
+        if not isinstance(self.task, TaskType):
+            raise ConfigurationError("Cross-validation task must be a TaskType value.")
+        if (
+            not isinstance(self.estimators, tuple)
+            or len(self.estimators) < 2
+            or any(not isinstance(estimator, str) for estimator in self.estimators)
+        ):
+            raise ConfigurationError(
+                "Cross-validation requires at least two estimator identifiers in a tuple."
+            )
+        if len(set(self.estimators)) != len(self.estimators):
+            raise ConfigurationError("Cross-validation estimator identifiers must be unique.")
+        supported_estimators = _estimators_for_task(self.task)
+        if any(estimator not in supported_estimators for estimator in self.estimators):
+            choices = ", ".join(sorted(supported_estimators))
+            raise ConfigurationError(
+                f"Cross-validation requires supported {self.task.value} estimators. "
+                f"Choose from: {choices}."
+            )
+        if self.primary_metric not in _metrics_for_task(self.task):
+            choices = ", ".join(_metrics_for_task(self.task))
+            raise ConfigurationError(
+                f"Cross-validation primary metric must support task {self.task.value!r}. "
+                f"Choose from: {choices}."
+            )
         if not isinstance(self.split, CrossValidationSplitConfig):
             raise ConfigurationError(
                 "Cross-validation split must be a CrossValidationSplitConfig value."
+            )
+        if not isinstance(self.preprocessing, PreprocessingConfig):
+            raise ConfigurationError(
+                "Cross-validation preprocessing must be a PreprocessingConfig value."
+            )
+        if not isinstance(self.feature_overrides, FeatureOverrides):
+            raise ConfigurationError(
+                "Cross-validation feature_overrides must be a FeatureOverrides value."
             )
 
 
@@ -87,7 +137,9 @@ class CrossValidationConfiguration:
 
     def __post_init__(self) -> None:
         try:
+            task = TaskType(self.task)
             config = CrossValidationConfig(
+                task=task,
                 estimators=self.estimators,
                 primary_metric=self.primary_metric,
                 split=CrossValidationSplitConfig(
@@ -108,17 +160,13 @@ class CrossValidationConfiguration:
             raise BenchmarkStoreError(
                 f"Cross-validation manifest configuration is invalid: {error}"
             ) from error
-        if self.task != TaskType.CLASSIFICATION.value:
-            raise BenchmarkStoreError(
-                "Cross-validation manifests currently support classification only."
-            )
         if config.primary_metric != self.primary_metric:
             raise BenchmarkStoreError("Cross-validation primary metric is invalid.")
 
     @classmethod
     def from_config(cls, config: CrossValidationConfig) -> CrossValidationConfiguration:
         return cls(
-            task=TaskType.CLASSIFICATION.value,
+            task=config.task.value,
             estimators=config.estimators,
             primary_metric=config.primary_metric,
             fold_count=config.split.fold_count,
@@ -281,14 +329,19 @@ class CrossValidationFoldResult:
             raise BenchmarkStoreError(
                 "Cross-validation fold metric names must be unique and sorted."
             )
-        if names != tuple(sorted(CLASSIFICATION_METRICS)):
+        supported_metric_sets = {
+            tuple(sorted(CLASSIFICATION_METRICS)),
+            tuple(sorted(REGRESSION_METRICS)),
+        }
+        if names not in supported_metric_sets:
             raise BenchmarkStoreError(
-                "Cross-validation folds must contain the complete classification metric set."
+                "Cross-validation folds must contain one complete task metric set."
             )
-        if any(not metric.higher_is_better for metric in self.metrics):
-            raise BenchmarkStoreError(
-                "Cross-validation classification metric directions are invalid."
-            )
+        if any(
+            metric.higher_is_better != _metric_higher_is_better(metric.name)
+            for metric in self.metrics
+        ):
+            raise BenchmarkStoreError("Cross-validation metric directions are invalid.")
         _number(self.duration_seconds, "cross-validation fold duration_seconds")
         if self.duration_seconds < 0:
             raise BenchmarkStoreError("Cross-validation fold duration must not be negative.")
@@ -346,8 +399,7 @@ class CrossValidationMetricSummary:
 
     def __post_init__(self) -> None:
         _string(self.name, "cross-validation metric name")
-        if self.name not in CLASSIFICATION_METRICS:
-            raise BenchmarkStoreError(f"Cross-validation metric is unsupported: {self.name!r}.")
+        expected_direction = _metric_higher_is_better(self.name)
         if not isinstance(self.fold_values, tuple) or len(self.fold_values) < 2:
             raise BenchmarkStoreError("Cross-validation metric requires at least two fold values.")
         values = tuple(
@@ -367,10 +419,8 @@ class CrossValidationMetricSummary:
             self.higher_is_better,
             f"cross-validation metric {self.name!r} higher_is_better",
         )
-        if not self.higher_is_better:
-            raise BenchmarkStoreError(
-                "Cross-validation classification metric directions are invalid."
-            )
+        if self.higher_is_better != expected_direction:
+            raise BenchmarkStoreError("Cross-validation metric direction is invalid.")
         if not math.isclose(self.mean, fmean(values), rel_tol=1e-12, abs_tol=1e-12):
             raise BenchmarkStoreError(
                 "Cross-validation metric mean does not match its fold values."
@@ -445,7 +495,7 @@ class CrossValidationEntry:
     failure: RunFailure | None
 
     def __post_init__(self) -> None:
-        if self.estimator not in CLASSIFICATION_ESTIMATORS:
+        if self.estimator not in ALL_ESTIMATORS:
             raise BenchmarkStoreError(
                 f"Cross-validation estimator is unsupported: {self.estimator!r}."
             )
@@ -657,7 +707,7 @@ class CrossValidationManifest:
 
     def __post_init__(self) -> None:
         _integer(self.schema_version, "cross-validation schema_version")
-        if self.schema_version != CROSS_VALIDATION_MANIFEST_SCHEMA_VERSION:
+        if self.schema_version not in _SUPPORTED_CROSS_VALIDATION_MANIFEST_SCHEMA_VERSIONS:
             raise BenchmarkStoreError(
                 f"Unsupported cross-validation manifest schema version: {self.schema_version}."
             )
@@ -680,6 +730,13 @@ class CrossValidationManifest:
             )
         if not isinstance(self.configuration, CrossValidationConfiguration):
             raise BenchmarkStoreError("Cross-validation configuration is invalid.")
+        task = TaskType(self.configuration.task)
+        if self.schema_version == 1 and task is not TaskType.CLASSIFICATION:
+            raise BenchmarkStoreError(
+                "Cross-validation manifest schema version 1 supports classification only."
+            )
+        expected_metrics = tuple(sorted(_metrics_for_task(task)))
+        expected_estimators = _estimators_for_task(task)
         if not isinstance(self.dataset, DatasetSnapshot):
             raise BenchmarkStoreError("Cross-validation dataset snapshot is invalid.")
         if not isinstance(self.environment, EnvironmentSnapshot):
@@ -729,6 +786,10 @@ class CrossValidationManifest:
             raise BenchmarkStoreError(
                 "Cross-validation entries must follow configured estimator order."
             )
+        if any(entry.estimator not in expected_estimators for entry in self.entries):
+            raise BenchmarkStoreError(
+                "Cross-validation entries contain an estimator for a different task."
+            )
 
         successful = tuple(entry for entry in self.entries if entry.status is RunStatus.SUCCEEDED)
         expected_status = (
@@ -748,15 +809,22 @@ class CrossValidationManifest:
                 "Cross-validation ranks must form a complete one-based sequence."
             )
         for entry in self.entries:
+            if any(
+                tuple(metric.name for metric in fold.metrics) != expected_metrics
+                for fold in entry.folds
+            ):
+                raise BenchmarkStoreError(
+                    "Cross-validation fold metrics do not match the configured task."
+                )
             if entry.status is RunStatus.SUCCEEDED:
                 if len(entry.folds) != self.configuration.fold_count:
                     raise BenchmarkStoreError(
                         "Successful cross-validation entries must complete every fold."
                     )
                 metric_by_name = {metric.name: metric for metric in entry.metrics}
-                if tuple(metric_by_name) != tuple(sorted(CLASSIFICATION_METRICS)):
+                if tuple(metric_by_name) != expected_metrics:
                     raise BenchmarkStoreError(
-                        "Cross-validation entry must summarize every classification metric."
+                        "Cross-validation entry must summarize every configured-task metric."
                     )
                 primary = metric_by_name.get(self.configuration.primary_metric)
                 if primary is None:

@@ -8,7 +8,7 @@ import math
 from typing import Any, cast
 
 import pandas as pd
-from sklearn.model_selection import StratifiedKFold, train_test_split
+from sklearn.model_selection import KFold, StratifiedKFold, train_test_split
 
 from mlforge.datasets import LoadedDataset
 from mlforge.datasets.validation import validate_loaded_dataset
@@ -172,12 +172,15 @@ def split_partition_sha256(split: DatasetSplit) -> str:
     return hashlib.sha256(content).hexdigest()
 
 
-def split_classification_folds(
+def split_cross_validation_folds(
     dataset: LoadedDataset,
     *,
+    task: TaskType,
     config: CrossValidationSplitConfig | None = None,
 ) -> tuple[DatasetSplit, ...]:
-    """Create shared deterministic stratified folds without fitting any transformations."""
+    """Create deterministic task-appropriate folds without fitting transformations."""
+    if not isinstance(task, TaskType):
+        raise DatasetSplitError("Task must be a TaskType value.")
     validate_loaded_dataset(dataset, operation="cross-validation splitting")
     effective_config = config or CrossValidationSplitConfig()
     if not isinstance(effective_config, CrossValidationSplitConfig):
@@ -190,27 +193,44 @@ def split_classification_folds(
     features = frame.drop(columns=[target_name])
     if features.shape[1] == 0:
         raise DatasetSplitError("Cross-validation requires at least one feature column.")
-    if len(frame) < effective_config.fold_count:
-        raise DatasetSplitError(
-            "Cross-validation requires at least as many rows as folds. Add data or reduce folds."
+    minimum_rows = (
+        effective_config.fold_count * 2
+        if task is TaskType.REGRESSION
+        else effective_config.fold_count
+    )
+    if len(frame) < minimum_rows:
+        detail = (
+            "at least two validation rows per fold for regression metrics"
+            if task is TaskType.REGRESSION
+            else "at least as many rows as folds"
         )
+        raise DatasetSplitError(f"Cross-validation requires {detail}. Add data or reduce folds.")
     target = frame[target_name]
     if not isinstance(target, pd.Series):
         raise DatasetSplitError("The configured target must resolve to exactly one column.")
-    _validate_target(target, TaskType.CLASSIFICATION)
-    minimum_class_count = int(target.value_counts(dropna=False).min())
-    if minimum_class_count < effective_config.fold_count:
-        raise DatasetSplitError(
-            "Stratified cross-validation requires at least one row per fold in every target "
-            f"class; the smallest class has {minimum_class_count} rows for "
-            f"{effective_config.fold_count} folds. Add data or reduce folds."
+    _validate_target(target, task)
+    splitter: KFold | StratifiedKFold
+    if task is TaskType.CLASSIFICATION:
+        minimum_class_count = int(target.value_counts(dropna=False).min())
+        if minimum_class_count < effective_config.fold_count:
+            raise DatasetSplitError(
+                "Stratified cross-validation requires at least one row per fold in every target "
+                f"class; the smallest class has {minimum_class_count} rows for "
+                f"{effective_config.fold_count} folds. Add data or reduce folds."
+            )
+        splitter = StratifiedKFold(
+            n_splits=effective_config.fold_count,
+            shuffle=True,
+            random_state=effective_config.random_seed,
         )
-
-    splitter = StratifiedKFold(
-        n_splits=effective_config.fold_count,
-        shuffle=True,
-        random_state=effective_config.random_seed,
-    )
+        stratified = True
+    else:
+        splitter = KFold(
+            n_splits=effective_config.fold_count,
+            shuffle=True,
+            random_state=effective_config.random_seed,
+        )
+        stratified = False
     folds: list[DatasetSplit] = []
     try:
         raw_folds = splitter.split(features, target)
@@ -226,13 +246,13 @@ def split_classification_folds(
                     train_target=train_target,
                     validation_target=validation_target,
                     target_name=target_name,
-                    task=TaskType.CLASSIFICATION,
+                    task=task,
                     config=SplitConfig(
                         validation_fraction=len(validation_positions) / len(frame),
                         random_seed=effective_config.random_seed,
-                        stratify=True,
+                        stratify=stratified,
                     ),
-                    stratified=True,
+                    stratified=stratified,
                 )
             )
     except ValueError as error:
@@ -240,3 +260,21 @@ def split_classification_folds(
             f"Could not create the requested cross-validation folds: {error}"
         ) from error
     return tuple(folds)
+
+
+def split_classification_folds(
+    dataset: LoadedDataset,
+    *,
+    config: CrossValidationSplitConfig | None = None,
+) -> tuple[DatasetSplit, ...]:
+    """Create shared deterministic stratified classification folds."""
+    return split_cross_validation_folds(dataset, task=TaskType.CLASSIFICATION, config=config)
+
+
+def split_regression_folds(
+    dataset: LoadedDataset,
+    *,
+    config: CrossValidationSplitConfig | None = None,
+) -> tuple[DatasetSplit, ...]:
+    """Create shared deterministic shuffled regression folds."""
+    return split_cross_validation_folds(dataset, task=TaskType.REGRESSION, config=config)

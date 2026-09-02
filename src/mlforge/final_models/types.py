@@ -33,9 +33,17 @@ from mlforge.runs import (
     RunParameter,
     RunStatus,
 )
-from mlforge.training import CLASSIFICATION_ESTIMATORS, CLASSIFICATION_METRICS, TrainingConfig
+from mlforge.training import (
+    ALL_ESTIMATORS,
+    CLASSIFICATION_ESTIMATORS,
+    CLASSIFICATION_METRICS,
+    REGRESSION_ESTIMATORS,
+    REGRESSION_METRICS,
+    TrainingConfig,
+)
 
-FINAL_MODEL_MANIFEST_SCHEMA_VERSION = 1
+FINAL_MODEL_MANIFEST_SCHEMA_VERSION = 2
+_SUPPORTED_FINAL_MODEL_MANIFEST_SCHEMA_VERSIONS = frozenset({1, 2})
 FINAL_MODEL_FIT_SCOPE = "all_rows"
 
 
@@ -134,11 +142,11 @@ class FinalModelSelection:
     def __post_init__(self) -> None:
         _uuid(self.benchmark_id, "selection benchmark_id")
         _sha256(self.manifest_sha256, "selection manifest_sha256")
-        if self.estimator not in CLASSIFICATION_ESTIMATORS:
+        if self.estimator not in ALL_ESTIMATORS:
             raise FinalModelStoreError(
                 f"Final-model selection estimator is unsupported: {self.estimator!r}."
             )
-        if self.primary_metric not in CLASSIFICATION_METRICS:
+        if self.primary_metric not in CLASSIFICATION_METRICS + REGRESSION_METRICS:
             raise FinalModelStoreError(
                 f"Final-model selection metric is unsupported: {self.primary_metric!r}."
             )
@@ -218,7 +226,7 @@ class FinalModelConfiguration:
 
     def __post_init__(self) -> None:
         try:
-            config = TrainingConfig(
+            TrainingConfig(
                 task=TaskType(self.task),
                 estimator=self.estimator,
                 split=SplitConfig(random_seed=self.random_seed),
@@ -236,10 +244,6 @@ class FinalModelConfiguration:
             raise FinalModelStoreError(
                 f"Final-model manifest configuration is invalid: {error}"
             ) from error
-        if config.task is not TaskType.CLASSIFICATION:
-            raise FinalModelStoreError(
-                "Final-model manifests currently support cross-validated classification only."
-            )
         if not isinstance(self.estimator_parameters, tuple) or any(
             not isinstance(item, RunParameter) for item in self.estimator_parameters
         ):
@@ -383,7 +387,10 @@ class FinalModelManifest:
     failure: RunFailure | None
 
     def __post_init__(self) -> None:
-        if _integer(self.schema_version, "schema_version") != FINAL_MODEL_MANIFEST_SCHEMA_VERSION:
+        if (
+            _integer(self.schema_version, "schema_version")
+            not in _SUPPORTED_FINAL_MODEL_MANIFEST_SCHEMA_VERSIONS
+        ):
             raise FinalModelStoreError(
                 f"Unsupported final-model manifest schema version: {self.schema_version}."
             )
@@ -405,6 +412,25 @@ class FinalModelManifest:
             raise FinalModelStoreError("Final-model selection is invalid.")
         if not isinstance(self.configuration, FinalModelConfiguration):
             raise FinalModelStoreError("Final-model configuration is invalid.")
+        task = TaskType(self.configuration.task)
+        if self.schema_version == 1 and task is not TaskType.CLASSIFICATION:
+            raise FinalModelStoreError(
+                "Final-model manifest schema version 1 supports classification only."
+            )
+        expected_estimators = (
+            CLASSIFICATION_ESTIMATORS if task is TaskType.CLASSIFICATION else REGRESSION_ESTIMATORS
+        )
+        expected_metrics = (
+            CLASSIFICATION_METRICS if task is TaskType.CLASSIFICATION else REGRESSION_METRICS
+        )
+        if self.selection_evidence.estimator not in expected_estimators:
+            raise FinalModelStoreError(
+                "Final-model selection estimator does not match the configured task."
+            )
+        if self.selection_evidence.primary_metric not in expected_metrics:
+            raise FinalModelStoreError(
+                "Final-model selection metric does not match the configured task."
+            )
         if self.selection_evidence.estimator != self.configuration.estimator:
             raise FinalModelStoreError(
                 "Final-model configuration estimator does not match its selection."

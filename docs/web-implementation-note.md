@@ -1,11 +1,11 @@
 # Web Application Implementation Note
 
-**Status:** Phases 0 through 15 are complete. The first local, single-user MLForge web version has
-passed its final automated gates and an end-to-end browser verification.
+**Status:** The local single-user application and regression-parity extension are complete. Both
+classification and regression journeys pass their final automated gates and browser verification.
 
 ## Current architecture
 
-MLForge 0.3.0 is a typed, library-first Python package under `src/mlforge`. The command-line
+MLForge 0.5.0 is a typed, library-first Python package under `src/mlforge`. The command-line
 interface is an adapter: dataset validation, profiling, preprocessing, training, comparison,
 cross-validation, final fitting, artifact persistence, and inference live in importable domain and
 application modules. Expected failures use the `MLForgeError` hierarchy.
@@ -27,7 +27,9 @@ while keeping retryable web job state in SQLite. Phase 9 safely joins completed 
 those strict manifests for model discovery and display. Phase 10 accepts a feature CSV only for a
 web-owned finalized model, crosses the executable-artifact trust boundary after lineage
 verification, and delegates schema validation and inference to `predict_csv`. There is still no
-authentication or deployment adapter. Phase 11 reads the already-created result CSV without
+request authentication or supported public-network deployment. The repository's private Docker
+Compose adapter keeps the browser-facing service on loopback. Phase 11 reads the already-created
+result CSV without
 rerunning inference, validates its stored row contract, exposes a bounded preview, and streams the
 complete file for download. Phase 12 adds a read-only history projection over persisted experiment,
 dataset, and durable job metadata; selecting an item continues to read metrics and results from the
@@ -42,9 +44,9 @@ existing immutable core stores.
 | Data-quality review | `mlforge.datasets.profile_dataset` | Provides JSON-safe column, missingness, cardinality, identifier, target, and warning data. |
 | One-model training | `mlforge.training.train` | Supports three classification baselines and two regression baselines with held-out metrics. |
 | Classification comparison | `mlforge.benchmarks.benchmark` | Uses one shared holdout partition and returns a fitted in-memory winner. |
-| Classification cross-validation | `mlforge.benchmarks.cross_validate_benchmark` | Supports deterministic stratified 2-10 fold comparison and persisted ranking evidence. |
+| Task-aware cross-validation | `mlforge.benchmarks.cross_validate_benchmark` | Supports deterministic stratified classification folds or shuffled regression folds, with persisted ranking evidence. |
 | Compatible run comparison | `mlforge.runs.compare_runs` | Can rank compatible successful runs but is not a regression benchmark orchestration service. |
-| Final model fitting | `mlforge.final_models.fit_selected_model` | Classification-only; requires a persisted cross-validation result and the exact unchanged source CSV. |
+| Final model fitting | `mlforge.final_models.fit_selected_model` | Supports classification and regression; requires a persisted cross-validation result and the exact unchanged source CSV. |
 | History | `LocalRunStore`, `LocalBenchmarkStore`, `LocalCrossValidationStore`, `LocalFinalModelStore` | Lists and validates immutable local records; it must not be rewritten for web labels or UI state. |
 | Artifact inspection and loading | `inspect_artifact`, `load_artifact`, `LocalArtifactStore` | Inspection is safe; loading crosses the pickle trust boundary and requires exact dependency versions. |
 | Prediction and download | `predict_frame`, `predict_csv`, `write_predictions_csv` | Enforces the stored input schema and creates a non-overwriting UTF-8 result CSV. |
@@ -173,9 +175,9 @@ exercises them.
    intentionally removed.
 2. **Artifact trust:** the server may trust only artifacts it created and can match to its local
    immutable lineage records. Version 1 must not accept arbitrary artifact uploads.
-3. **Feature asymmetry:** cross-validation comparison and final fitting are classification-only.
-   Regression supports held-out training, artifacts, and prediction, but the UI must not offer
-   unsupported regression finalization or imply a native regression benchmark service exists.
+3. **Task-specific validation:** classification uses stratified folds and percentage-style metrics;
+   regression uses ordinary shuffled K-folds and MAE/R-squared/RMSE. The UI must preserve metric
+   direction and must not render regression errors as percentages.
 4. **Progress granularity:** current application calls return only terminal results. The first UI
    must show honest job-level progress and never fabricate percentages or per-model states.
 5. **Mutable versus immutable state:** friendly names, dataset ownership links, and job status are
@@ -189,8 +191,8 @@ exercises them.
 9. **Version compatibility:** prediction artifacts require the exact Python and ML dependency
    versions recorded at training time; the web runtime must train and predict in one controlled
    environment.
-10. **Regression product scope:** a polished regression comparison/finalization story would require
-    a separately accepted core milestone or an explicitly scoped web orchestration design.
+10. **Regression compatibility:** version-2 comparison/final-model manifests and web schema rows
+    represent regression; version-1 immutable manifests remain classification-only and readable.
 
 ## Phase 0 verification
 

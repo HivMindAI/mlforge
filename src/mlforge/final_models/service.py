@@ -240,6 +240,7 @@ def fit_selected_model(
         )
 
     selected_configuration = persisted_selection.configuration
+    selected_task = TaskType(selected_configuration.task)
     preprocessing = PreprocessingConfig(
         numeric_imputation=NumericImputationStrategy(selected_configuration.numeric_imputation),
         scale_numeric=selected_configuration.scale_numeric,
@@ -250,7 +251,7 @@ def fit_selected_model(
         categorical=selected_configuration.categorical_overrides,
     )
     training_config = TrainingConfig(
-        task=TaskType.CLASSIFICATION,
+        task=selected_task,
         estimator=winner.estimator,
         split=SplitConfig(random_seed=selected_configuration.random_seed),
         preprocessing=preprocessing,
@@ -274,7 +275,7 @@ def fit_selected_model(
         fold_plan_sha256=persisted_selection.fold_plan_sha256,
     )
     final_configuration = FinalModelConfiguration(
-        task=TaskType.CLASSIFICATION.value,
+        task=selected_task.value,
         estimator=winner.estimator,
         random_seed=selected_configuration.random_seed,
         numeric_imputation=selected_configuration.numeric_imputation,

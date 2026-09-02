@@ -22,6 +22,9 @@ restrained retry and next-step actions; the dashboard now reflects real persiste
 completes the automated quality gates, end-to-end browser verification, responsive navigation
 checks, and final boilerplate cleanup for the first local single-user web version.
 
+The v0.5.0 workflow extends the same comparison, result, finalization, model-registry, and
+prediction journey to regression targets without changing the single-user deployment boundary.
+
 ## Local development
 
 ```bash
@@ -45,4 +48,10 @@ Before review, run:
 ```bash
 npm run lint
 npm run build
+npx playwright install chromium
+npm run test:e2e
 ```
+
+The browser test starts both local servers, uses the repository's example CSV files, and exercises
+the complete upload-to-prediction workflow in an isolated temporary workspace. It removes that
+workspace when the run finishes.

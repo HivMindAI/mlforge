@@ -5,16 +5,10 @@ import { useCallback, useEffect, useState } from "react";
 
 import { EmptyState, PageErrorState, PageLoadingState } from "@/components/async-state";
 import {
-  CLASSIFICATION_ESTIMATOR_LABELS,
   type FinalModelList,
   getFinalModels,
 } from "@/lib/datasets";
-
-const percentFormatter = new Intl.NumberFormat("en-US", {
-  style: "percent",
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
+import { estimatorLabel, formatMetricValue, metricLabel, taskLabel } from "@/lib/model-display";
 
 function formatDate(value: string): string {
   return new Intl.DateTimeFormat("en-US", {
@@ -24,13 +18,6 @@ function formatDate(value: string): string {
     hour: "numeric",
     minute: "2-digit",
   }).format(new Date(value));
-}
-
-function metricLabel(name: string): string {
-  return name
-    .split("_")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
 }
 
 export function ModelList() {
@@ -99,7 +86,7 @@ export function ModelList() {
           <EmptyState
             className="models-empty"
             title="No finalized models"
-            description="Complete a classification experiment, then finalize its rank-one model."
+            description="Complete an experiment, then finalize its rank-one model."
             actionHref="/experiments"
             actionLabel="Review experiments"
           />
@@ -125,15 +112,15 @@ export function ModelList() {
                   <tr key={model.final_model_id}>
                     <th scope="row">
                       <Link className="model-name-link" href={`/models/${model.final_model_id}`}>
-                        {CLASSIFICATION_ESTIMATOR_LABELS[model.estimator]}
+                        {estimatorLabel(model.estimator)}
                       </Link>
                       <code className="model-short-id">{model.final_model_id.slice(0, 8)}</code>
                     </th>
                     <td>{model.dataset_name}</td>
-                    <td>Classification</td>
+                    <td>{taskLabel(model.task)}</td>
                     <td>
                       <span className="model-metric-value">
-                        {percentFormatter.format(model.primary_metric_mean)}
+                        {formatMetricValue(model.primary_metric, model.primary_metric_mean)}
                       </span>
                       <span className="model-metric-label">
                         {metricLabel(model.primary_metric)}

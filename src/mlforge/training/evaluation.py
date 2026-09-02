@@ -31,6 +31,12 @@ CLASSIFICATION_METRICS = (
     "recall_macro",
 )
 
+REGRESSION_METRICS = (
+    "mean_absolute_error",
+    "r2",
+    "root_mean_squared_error",
+)
+
 
 def _metric(name: str, value: float, *, higher_is_better: bool) -> MetricValue:
     if not math.isfinite(value):

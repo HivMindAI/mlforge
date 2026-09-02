@@ -40,7 +40,21 @@ _EXPERIMENT_SCHEMA = """
 CREATE TABLE IF NOT EXISTS experiments (
     experiment_id TEXT PRIMARY KEY,
     dataset_id TEXT NOT NULL,
-    task TEXT NOT NULL CHECK (task = 'classification'),
+    task TEXT NOT NULL CHECK (task IN ('classification', 'regression')),
+    validation_strategy TEXT NOT NULL CHECK (validation_strategy = 'cross-validation'),
+    fold_count INTEGER NOT NULL CHECK (fold_count BETWEEN 2 AND 10),
+    estimators_json TEXT NOT NULL,
+    primary_metric TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (dataset_id) REFERENCES datasets(dataset_id)
+)
+"""
+
+_EXPERIMENT_V2_MIGRATION_SCHEMA = """
+CREATE TABLE experiments_v2 (
+    experiment_id TEXT PRIMARY KEY,
+    dataset_id TEXT NOT NULL,
+    task TEXT NOT NULL CHECK (task IN ('classification', 'regression')),
     validation_strategy TEXT NOT NULL CHECK (validation_strategy = 'cross-validation'),
     fold_count INTEGER NOT NULL CHECK (fold_count BETWEEN 2 AND 10),
     estimators_json TEXT NOT NULL,
@@ -116,6 +130,166 @@ CREATE TABLE IF NOT EXISTS predictions (
     FOREIGN KEY (finalization_id) REFERENCES finalizations(finalization_id)
 )
 """
+
+WEB_SCHEMA_VERSION = 2
+
+_WEB_SCHEMA_STATEMENTS = (
+    _DATASET_SCHEMA,
+    _EXPERIMENT_SCHEMA,
+    _EXPERIMENT_CREATED_INDEX,
+    _JOB_SCHEMA,
+    _FINALIZATION_SCHEMA,
+    _FINALIZATION_EXPERIMENT_INDEX,
+    _FINALIZATION_ACTIVE_INDEX,
+    _FINALIZATION_COMPLETE_INDEX,
+    _PREDICTION_SCHEMA,
+)
+
+_EXPECTED_TABLE_COLUMNS = {
+    "datasets": (
+        "dataset_id",
+        "original_filename",
+        "stored_filename",
+        "file_size_bytes",
+        "row_count",
+        "column_count",
+        "columns_json",
+        "target",
+        "created_at",
+    ),
+    "experiments": (
+        "experiment_id",
+        "dataset_id",
+        "task",
+        "validation_strategy",
+        "fold_count",
+        "estimators_json",
+        "primary_metric",
+        "created_at",
+    ),
+    "jobs": (
+        "job_id",
+        "experiment_id",
+        "status",
+        "created_at",
+        "started_at",
+        "completed_at",
+        "benchmark_id",
+        "error_message",
+    ),
+    "finalizations": (
+        "finalization_id",
+        "experiment_id",
+        "status",
+        "created_at",
+        "started_at",
+        "completed_at",
+        "final_model_id",
+        "error_message",
+    ),
+    "predictions": (
+        "prediction_id",
+        "finalization_id",
+        "final_model_id",
+        "original_filename",
+        "input_stored_filename",
+        "output_stored_filename",
+        "input_file_size_bytes",
+        "row_count",
+        "status",
+        "created_at",
+        "completed_at",
+    ),
+}
+
+
+def initialize_web_schema(workspace: Path) -> None:
+    """Create or adopt the complete versioned web schema transactionally."""
+    resolved_workspace = workspace.expanduser().resolve()
+    database_path = resolved_workspace / "mlforge.sqlite3"
+    try:
+        resolved_workspace.mkdir(parents=True, exist_ok=True)
+        with closing(sqlite3.connect(database_path, timeout=10)) as connection:
+            row = connection.execute("PRAGMA user_version").fetchone()
+            current_version = cast(int, row[0] if row is not None else 0)
+            if current_version > WEB_SCHEMA_VERSION:
+                raise WebStorageError(
+                    "Web metadata schema version "
+                    f"{current_version} is newer than supported version {WEB_SCHEMA_VERSION}."
+                )
+
+            connection.execute("PRAGMA foreign_keys = OFF")
+            connection.execute("BEGIN IMMEDIATE")
+            if current_version == 0:
+                had_experiments = _table_exists(connection, "experiments")
+                for statement in _WEB_SCHEMA_STATEMENTS:
+                    connection.execute(statement)
+                _validate_web_schema(connection)
+                if had_experiments:
+                    _migrate_experiments_to_v2(connection)
+            elif current_version == 1:
+                _validate_web_schema(connection)
+                _migrate_experiments_to_v2(connection)
+            _validate_web_schema(connection)
+            connection.execute(f"PRAGMA user_version = {WEB_SCHEMA_VERSION}")
+            connection.execute("PRAGMA optimize")
+            connection.commit()
+            connection.execute("PRAGMA foreign_keys = ON")
+    except (OSError, sqlite3.Error) as error:
+        raise WebStorageError("Could not initialize the versioned web metadata schema.") from error
+
+
+def _validate_web_schema(connection: sqlite3.Connection) -> None:
+    """Reject unversioned or restored databases whose table shapes are incompatible."""
+    for table, expected_columns in _EXPECTED_TABLE_COLUMNS.items():
+        rows = connection.execute(f'PRAGMA table_info("{table}")').fetchall()
+        actual_columns = tuple(cast(str, row[1]) for row in rows)
+        if actual_columns != expected_columns:
+            raise sqlite3.DatabaseError(f"Web metadata table {table!r} has incompatible columns.")
+    if connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
+        raise sqlite3.DatabaseError("Web metadata contains broken foreign-key references.")
+
+
+def _table_exists(connection: sqlite3.Connection, table: str) -> bool:
+    row = connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+        (table,),
+    ).fetchone()
+    return row is not None
+
+
+def _migrate_experiments_to_v2(connection: sqlite3.Connection) -> None:
+    """Broaden experiment tasks without losing dependent web-owned lineage."""
+    if _table_exists(connection, "experiments_v2"):
+        raise sqlite3.DatabaseError("Temporary experiments_v2 table already exists.")
+    connection.execute(_EXPERIMENT_V2_MIGRATION_SCHEMA)
+    connection.execute(
+        """
+        INSERT INTO experiments_v2 (
+            experiment_id,
+            dataset_id,
+            task,
+            validation_strategy,
+            fold_count,
+            estimators_json,
+            primary_metric,
+            created_at
+        )
+        SELECT
+            experiment_id,
+            dataset_id,
+            task,
+            validation_strategy,
+            fold_count,
+            estimators_json,
+            primary_metric,
+            created_at
+        FROM experiments
+        """
+    )
+    connection.execute("DROP TABLE experiments")
+    connection.execute("ALTER TABLE experiments_v2 RENAME TO experiments")
+    connection.execute(_EXPERIMENT_CREATED_INDEX)
 
 
 @dataclass(frozen=True, slots=True)
@@ -213,11 +387,9 @@ class DatasetStore:
         """Create the local workspace and the first web metadata table."""
         try:
             self.uploads_directory.mkdir(parents=True, exist_ok=True)
-            with closing(self._connect()) as connection:
-                connection.execute(_DATASET_SCHEMA)
-                connection.commit()
-        except (OSError, sqlite3.Error) as error:
+        except OSError as error:
             raise WebStorageError("Could not initialize the MLForge web workspace.") from error
+        initialize_web_schema(self.workspace)
 
     def check_ready(self) -> None:
         """Verify that metadata is readable and the durable upload volume is writable."""
@@ -374,15 +546,7 @@ class ExperimentStore:
 
     def initialize(self) -> None:
         """Create the experiment configuration table in the shared web database."""
-        try:
-            self.workspace.mkdir(parents=True, exist_ok=True)
-            with closing(self._connect()) as connection:
-                connection.execute(_EXPERIMENT_SCHEMA)
-                connection.execute(_EXPERIMENT_CREATED_INDEX)
-                connection.execute("PRAGMA optimize")
-                connection.commit()
-        except (OSError, sqlite3.Error) as error:
-            raise WebStorageError("Could not initialize experiment metadata storage.") from error
+        initialize_web_schema(self.workspace)
 
     def create(self, record: ExperimentRecord) -> None:
         """Insert one validated immutable comparison configuration."""
@@ -479,10 +643,13 @@ class ExperimentStore:
                 isinstance(estimator, str) and estimator for estimator in raw_estimators
             ):
                 raise ValueError("Invalid estimator metadata")
+            task = cast(str, row["task"])
+            if task not in {"classification", "regression"}:
+                raise ValueError("Invalid experiment task")
             return ExperimentRecord(
                 experiment_id=UUID(cast(str, row["experiment_id"])),
                 dataset_id=UUID(cast(str, row["dataset_id"])),
-                task=cast(str, row["task"]),
+                task=task,
                 validation_strategy=cast(str, row["validation_strategy"]),
                 fold_count=cast(int, row["fold_count"]),
                 estimators=tuple(raw_estimators),
@@ -502,13 +669,7 @@ class JobStore:
 
     def initialize(self) -> None:
         """Create the job table in the shared web database."""
-        try:
-            self.workspace.mkdir(parents=True, exist_ok=True)
-            with closing(self._connect()) as connection:
-                connection.execute(_JOB_SCHEMA)
-                connection.commit()
-        except (OSError, sqlite3.Error) as error:
-            raise WebStorageError("Could not initialize job metadata storage.") from error
+        initialize_web_schema(self.workspace)
 
     def recover_interrupted(self, *, recovered_at: datetime) -> int:
         """Mark jobs lost during a process stop as failed instead of pretending they resumed."""
@@ -727,17 +888,7 @@ class FinalizationStore:
 
     def initialize(self) -> None:
         """Create finalization metadata and indexes from the actual lookup patterns."""
-        try:
-            self.workspace.mkdir(parents=True, exist_ok=True)
-            with closing(self._connect()) as connection:
-                connection.execute(_FINALIZATION_SCHEMA)
-                connection.execute(_FINALIZATION_EXPERIMENT_INDEX)
-                connection.execute(_FINALIZATION_ACTIVE_INDEX)
-                connection.execute(_FINALIZATION_COMPLETE_INDEX)
-                connection.execute("PRAGMA optimize")
-                connection.commit()
-        except (OSError, sqlite3.Error) as error:
-            raise WebStorageError("Could not initialize finalization metadata storage.") from error
+        initialize_web_schema(self.workspace)
 
     def recover_interrupted(self, *, recovered_at: datetime) -> int:
         """Mark final fits lost during a process stop as failed and retryable."""
@@ -1056,12 +1207,9 @@ class PredictionStore:
         try:
             self.inputs_directory.mkdir(parents=True, exist_ok=True)
             self.outputs_directory.mkdir(parents=True, exist_ok=True)
-            with closing(self._connect()) as connection:
-                connection.execute(_PREDICTION_SCHEMA)
-                connection.execute("PRAGMA optimize")
-                connection.commit()
-        except (OSError, sqlite3.Error) as error:
+        except OSError as error:
             raise WebStorageError("Could not initialize prediction storage.") from error
+        initialize_web_schema(self.workspace)
 
     def temporary_input_path(self, prediction_id: UUID) -> Path:
         """Return a server-owned temporary upload path."""

@@ -48,8 +48,9 @@ from mlforge.pipelines import (
 from mlforge.runs import LocalRunStore, RunComparison, RunManifest, compare_runs
 from mlforge.training import (
     ALL_ESTIMATORS,
-    CLASSIFICATION_ESTIMATORS,
     CLASSIFICATION_METRICS,
+    REGRESSION_ESTIMATORS,
+    REGRESSION_METRICS,
     TrainingConfig,
     train,
 )
@@ -156,34 +157,40 @@ def _add_commands(parser: ArgumentParser) -> None:
 
     benchmark_parser = commands.add_parser(
         "benchmark",
-        help="train and rank local classification baselines",
+        help="train and rank local supervised baselines",
         description=(
-            "Train classification baselines on one shared deterministic holdout or stratified "
+            "Train supervised baselines on one shared deterministic holdout or "
             "cross-validation plan and record the best observed result for an explicit metric."
         ),
     )
     _add_csv_options(benchmark_parser)
     benchmark_parser.add_argument(
+        "--task",
+        type=TaskType,
+        choices=tuple(TaskType),
+        default=TaskType.CLASSIFICATION,
+        help="supervised task type (default: classification)",
+    )
+    benchmark_parser.add_argument(
         "--estimator",
         action="append",
-        choices=tuple(sorted(CLASSIFICATION_ESTIMATORS)),
+        choices=ALL_ESTIMATORS,
         metavar="NAME",
         help=(
-            "classification estimator to include; repeat at least twice; "
-            "defaults to dummy, logistic regression, and random forest"
+            "task-compatible estimator to include; repeat at least twice; "
+            "defaults to the supported estimators for the selected task"
         ),
     )
     benchmark_parser.add_argument(
         "--metric",
-        choices=CLASSIFICATION_METRICS,
-        default="balanced_accuracy",
-        help="primary leaderboard metric (default: balanced_accuracy)",
+        choices=CLASSIFICATION_METRICS + REGRESSION_METRICS,
+        help="task-compatible primary leaderboard metric",
     )
     benchmark_parser.add_argument(
         "--cross-validation-folds",
         type=_cross_validation_folds,
         metavar="FOLDS",
-        help="use shared stratified K-fold evaluation with 2-10 folds",
+        help="use shared task-appropriate K-fold evaluation with 2-10 folds",
     )
     benchmark_parser.add_argument(
         "--validation-fraction",
@@ -659,10 +666,19 @@ def _run_benchmark(arguments: Namespace) -> int:
         target=cast(str, arguments.target),
         options=_csv_options(arguments),
     )
+    task = cast(TaskType, arguments.task)
     estimators = (
         tuple(requested_estimators)
         if requested_estimators is not None
-        else DEFAULT_CLASSIFICATION_BENCHMARK_ESTIMATORS
+        else (
+            DEFAULT_CLASSIFICATION_BENCHMARK_ESTIMATORS
+            if task is TaskType.CLASSIFICATION
+            else tuple(sorted(REGRESSION_ESTIMATORS))
+        )
+    )
+    requested_metric = cast(str | None, arguments.metric)
+    primary_metric = requested_metric or (
+        "balanced_accuracy" if task is TaskType.CLASSIFICATION else "root_mean_squared_error"
     )
     preprocessing = PreprocessingConfig(
         numeric_imputation=cast(NumericImputationStrategy, arguments.numeric_imputation),
@@ -694,8 +710,9 @@ def _run_benchmark(arguments: Namespace) -> int:
         cross_validation_result = cross_validate_benchmark(
             dataset,
             CrossValidationConfig(
+                task=task,
                 estimators=estimators,
-                primary_metric=cast(str, arguments.metric),
+                primary_metric=primary_metric,
                 split=CrossValidationSplitConfig(
                     fold_count=cross_validation_folds,
                     random_seed=cast(int, arguments.random_seed),
@@ -715,11 +732,17 @@ def _run_benchmark(arguments: Namespace) -> int:
         )
         return 0
 
+    if task is TaskType.REGRESSION:
+        raise ConfigurationError(
+            "Regression benchmarking requires --cross-validation-folds. "
+            "Single-run regression remains available through 'mlforge train'."
+        )
+
     result = benchmark(
         dataset,
         BenchmarkConfig(
             estimators=estimators,
-            primary_metric=cast(str, arguments.metric),
+            primary_metric=primary_metric,
             split=SplitConfig(
                 validation_fraction=validation_fraction or 0.2,
                 random_seed=cast(int, arguments.random_seed),
@@ -750,8 +773,9 @@ def _render_cross_validation(
         f"Manifest: {manifest_path}",
         f"Dataset SHA-256: {manifest.dataset.sha256}",
         (
-            f"Protocol: {manifest.configuration.fold_count}-fold stratified cross-validation "
-            f"(shuffle seed={manifest.configuration.random_seed})"
+            f"Protocol: {manifest.configuration.fold_count}-fold "
+            f"{'stratified ' if manifest.configuration.task == 'classification' else ''}"
+            f"cross-validation (shuffle seed={manifest.configuration.random_seed})"
         ),
         f"Primary metric: {manifest.configuration.primary_metric}",
         "Leaderboard:",

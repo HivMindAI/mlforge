@@ -47,7 +47,11 @@ from mlforge.errors import (
 )
 from mlforge.final_models import FinalModelManifest, LocalFinalModelStore
 from mlforge.inference import PredictionResult, predict_csv, write_predictions_csv
-from mlforge.pipelines import CrossValidationSplitConfig, split_classification_folds
+from mlforge.pipelines import (
+    CrossValidationSplitConfig,
+    TaskType,
+    split_cross_validation_folds,
+)
 from mlforge.web.errors import (
     ExperimentResultNotReadyError,
     ExperimentValidationError,
@@ -215,7 +219,7 @@ class ExperimentService:
         estimators: tuple[str, ...],
         fold_count: int,
     ) -> ExperimentRecord:
-        """Create one core-validated classification comparison configuration."""
+        """Create one core-validated supervised comparison configuration."""
         dataset_record = self.dataset_store.get(dataset_id)
         if dataset_record.target is None:
             raise ExperimentValidationError(
@@ -226,26 +230,32 @@ class ExperimentService:
         options = CsvLoadOptions(max_file_size_bytes=self.settings.max_upload_bytes)
         dataset = load_csv(dataset_path, target=dataset_record.target, options=options)
         profile = profile_dataset(dataset)
-        if profile.target.task_hint is not TaskHint.CLASSIFICATION:
+        if profile.target.task_hint is TaskHint.UNDETERMINED:
             detected = profile.target.task_hint.value
             raise ExperimentValidationError(
-                "Model comparison is currently available only for classification datasets. "
+                "Model comparison requires a classification or regression target. "
                 f"MLForge detected the selected target as {detected}."
             )
+        task = TaskType(profile.target.task_hint.value)
+        primary_metric = (
+            "balanced_accuracy" if task is TaskType.CLASSIFICATION else "root_mean_squared_error"
+        )
 
         try:
             config = CrossValidationConfig(
+                task=task,
                 estimators=estimators,
+                primary_metric=primary_metric,
                 split=CrossValidationSplitConfig(fold_count=fold_count),
             )
-            split_classification_folds(dataset, config=config.split)
+            split_cross_validation_folds(dataset, task=task, config=config.split)
         except (ConfigurationError, DatasetSplitError) as error:
             raise ExperimentValidationError(str(error)) from error
 
         record = ExperimentRecord(
             experiment_id=uuid4(),
             dataset_id=dataset_id,
-            task="classification",
+            task=task.value,
             validation_strategy="cross-validation",
             fold_count=config.split.fold_count,
             estimators=config.estimators,

@@ -136,7 +136,7 @@ export function AppShell({ children }: AppShellProps) {
           <Navigation />
           <div className="sidebar-meta" aria-label="Application version">
             <span>Local workspace</span>
-            <span>Core 0.3.0</span>
+            <span>Core 0.5.0</span>
           </div>
         </aside>
 

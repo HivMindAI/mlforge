@@ -1,6 +1,10 @@
 """Local baseline training and evaluation public API."""
 
-from mlforge.training.evaluation import CLASSIFICATION_METRICS, evaluate_predictions
+from mlforge.training.evaluation import (
+    CLASSIFICATION_METRICS,
+    REGRESSION_METRICS,
+    evaluate_predictions,
+)
 from mlforge.training.service import train
 from mlforge.training.types import (
     ALL_ESTIMATORS,
@@ -23,6 +27,7 @@ __all__ = [
     "LOGISTIC_REGRESSION",
     "RANDOM_FOREST_CLASSIFIER",
     "RANDOM_FOREST_REGRESSOR",
+    "REGRESSION_METRICS",
     "REGRESSION_ESTIMATORS",
     "RIDGE_REGRESSION",
     "TrainingConfig",

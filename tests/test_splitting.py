@@ -15,6 +15,7 @@ from mlforge.pipelines import (
     split_classification_folds,
     split_dataset,
     split_partition_sha256,
+    split_regression_folds,
 )
 
 
@@ -245,6 +246,41 @@ def test_classification_folds_are_deterministic_disjoint_and_exhaustive(
         assert split.validation_target.value_counts().to_dict() == {"a": 2, "b": 2, "c": 2}
         validation_indices.extend(split.validation_features.index.tolist())
     assert sorted(validation_indices) == dataset.frame.index.tolist()
+
+
+def test_regression_folds_are_deterministic_unstratified_and_exhaustive(
+    tmp_path: Path,
+) -> None:
+    """Continuous targets should use reproducible K-fold partitions without stratification."""
+    rows = [f"{index},{index * 1.75 + 4}" for index in range(30)]
+    dataset = load_csv(_write_dataset(tmp_path, rows), target="target")
+    config = CrossValidationSplitConfig(fold_count=5, random_seed=29)
+
+    first = split_regression_folds(dataset, config=config)
+    second = split_regression_folds(dataset, config=config)
+
+    assert tuple(map(split_partition_sha256, first)) == tuple(map(split_partition_sha256, second))
+    assert all(split.task is TaskType.REGRESSION for split in first)
+    assert all(split.stratified is False for split in first)
+    assert all(len(split.validation_features) >= 2 for split in first)
+    validation_indices = [
+        index for split in first for index in split.validation_features.index.tolist()
+    ]
+    assert sorted(validation_indices) == dataset.frame.index.tolist()
+
+
+def test_regression_folds_require_two_validation_rows_per_fold(tmp_path: Path) -> None:
+    """Regression folds must be large enough for finite R-squared evidence."""
+    dataset = load_csv(
+        _write_dataset(tmp_path, [f"{index},{index * 2.0}" for index in range(7)]),
+        target="target",
+    )
+
+    with pytest.raises(DatasetSplitError, match="two validation rows"):
+        split_regression_folds(
+            dataset,
+            config=CrossValidationSplitConfig(fold_count=4),
+        )
 
 
 @pytest.mark.parametrize(

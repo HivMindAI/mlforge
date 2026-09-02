@@ -5,16 +5,10 @@ import { useCallback, useEffect, useState } from "react";
 
 import { PageErrorState, PageLoadingState } from "@/components/async-state";
 import {
-  CLASSIFICATION_ESTIMATOR_LABELS,
   type FinalModelRecord,
   getFinalModel,
 } from "@/lib/datasets";
-
-const percentFormatter = new Intl.NumberFormat("en-US", {
-  style: "percent",
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
+import { estimatorLabel, formatMetricValue, metricLabel, taskLabel } from "@/lib/model-display";
 
 function formatDate(value: string): string {
   return new Intl.DateTimeFormat("en-US", {
@@ -30,13 +24,6 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function metricLabel(name: string): string {
-  return name
-    .split("_")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
 }
 
 type ModelDetailProps = Readonly<{ modelId: string }>;
@@ -97,7 +84,7 @@ export function ModelDetail({ modelId }: ModelDetailProps) {
       <header className="model-detail-header">
         <div>
           <span className="section-kicker">Finalized model</span>
-          <h1>{CLASSIFICATION_ESTIMATOR_LABELS[model.estimator]}</h1>
+          <h1>{estimatorLabel(model.estimator)}</h1>
           <p>{model.dataset_name}</p>
         </div>
         <span className="model-status">Finalized</span>
@@ -116,7 +103,7 @@ export function ModelDetail({ modelId }: ModelDetailProps) {
       <dl className="model-detail-facts">
         <div>
           <dt>Task</dt>
-          <dd>Classification</dd>
+          <dd>{taskLabel(model.task)}</dd>
         </div>
         <div>
           <dt>Created</dt>
@@ -191,8 +178,8 @@ export function ModelDetail({ modelId }: ModelDetailProps) {
               {model.metrics.map((metric) => (
                 <tr key={metric.name}>
                   <th scope="row">{metricLabel(metric.name)}</th>
-                  <td>{percentFormatter.format(metric.mean)}</td>
-                  <td>{percentFormatter.format(metric.standard_deviation)}</td>
+                  <td>{formatMetricValue(metric.name, metric.mean)}</td>
+                  <td>{formatMetricValue(metric.name, metric.standard_deviation)}</td>
                 </tr>
               ))}
             </tbody>

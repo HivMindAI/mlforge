@@ -81,6 +81,15 @@ export const CLASSIFICATION_ESTIMATOR_IDS = [
 
 export type ClassificationEstimator = (typeof CLASSIFICATION_ESTIMATOR_IDS)[number];
 
+export const REGRESSION_ESTIMATOR_IDS = [
+  "ridge-regression",
+  "random-forest-regressor",
+] as const;
+
+export type RegressionEstimator = (typeof REGRESSION_ESTIMATOR_IDS)[number];
+export type Estimator = ClassificationEstimator | RegressionEstimator;
+export type SupervisedTask = "classification" | "regression";
+
 export const CLASSIFICATION_ESTIMATOR_LABELS: Readonly<
   Record<ClassificationEstimator, string>
 > = {
@@ -89,13 +98,19 @@ export const CLASSIFICATION_ESTIMATOR_LABELS: Readonly<
   "random-forest-classifier": "Random Forest Classifier",
 };
 
+export const ESTIMATOR_LABELS: Readonly<Record<Estimator, string>> = {
+  ...CLASSIFICATION_ESTIMATOR_LABELS,
+  "ridge-regression": "Ridge Regression",
+  "random-forest-regressor": "Random Forest Regressor",
+};
+
 export type ExperimentRecord = Readonly<{
   experiment_id: string;
   dataset_id: string;
-  task: "classification";
+  task: SupervisedTask;
   validation_strategy: "cross-validation";
   fold_count: number;
-  estimators: readonly ClassificationEstimator[];
+  estimators: readonly Estimator[];
   primary_metric: string;
   created_at: string;
 }>;
@@ -108,7 +123,7 @@ export type ExperimentHistoryItem = Readonly<{
   experiment_id: string;
   dataset_id: string;
   dataset_name: string;
-  task: "classification";
+  task: SupervisedTask;
   status: ExperimentStatus;
   model_count: number;
   created_at: string;
@@ -179,8 +194,8 @@ export type FinalModelSummary = Readonly<{
   dataset_id: string;
   dataset_name: string;
   experiment_id: string;
-  estimator: ClassificationEstimator;
-  task: "classification";
+  estimator: Estimator;
+  task: SupervisedTask;
   created_at: string;
   primary_metric: string;
   primary_metric_mean: number;
@@ -199,8 +214,8 @@ export type FinalModelRecord = Readonly<{
   experiment_id: string;
   benchmark_id: string;
   status: "succeeded";
-  estimator: ClassificationEstimator;
-  task: "classification";
+  estimator: Estimator;
+  task: SupervisedTask;
   created_at: string;
   fit_scope: "all_rows";
   training_rows: number;
@@ -271,7 +286,7 @@ export type BenchmarkFailure = Readonly<{
 }>;
 
 export type BenchmarkEntry = Readonly<{
-  estimator: ClassificationEstimator;
+  estimator: Estimator;
   status: BenchmarkEntryStatus;
   rank: number | null;
   primary_metric_mean: number | null;
@@ -289,7 +304,7 @@ export type ExperimentResult = Readonly<{
   status: BenchmarkStatus;
   started_at: string;
   completed_at: string;
-  task: "classification";
+  task: SupervisedTask;
   target: string;
   row_count: number;
   column_count: number;
@@ -470,16 +485,28 @@ function isClassificationEstimator(value: unknown): value is ClassificationEstim
   return CLASSIFICATION_ESTIMATOR_IDS.includes(value as ClassificationEstimator);
 }
 
+function isRegressionEstimator(value: unknown): value is RegressionEstimator {
+  return REGRESSION_ESTIMATOR_IDS.includes(value as RegressionEstimator);
+}
+
+function isEstimator(value: unknown): value is Estimator {
+  return isClassificationEstimator(value) || isRegressionEstimator(value);
+}
+
+function isSupervisedTask(value: unknown): value is SupervisedTask {
+  return value === "classification" || value === "regression";
+}
+
 function parseExperiment(value: unknown): ExperimentRecord {
   if (
     !isJsonObject(value) ||
     typeof value.experiment_id !== "string" ||
     typeof value.dataset_id !== "string" ||
-    value.task !== "classification" ||
+    !isSupervisedTask(value.task) ||
     value.validation_strategy !== "cross-validation" ||
     !isNumber(value.fold_count) ||
     !Array.isArray(value.estimators) ||
-    !value.estimators.every(isClassificationEstimator) ||
+    !value.estimators.every(isEstimator) ||
     typeof value.primary_metric !== "string" ||
     typeof value.created_at !== "string"
   ) {
@@ -506,7 +533,7 @@ function parseExperimentHistoryItem(value: unknown): ExperimentHistoryItem {
     typeof value.experiment_id !== "string" ||
     typeof value.dataset_id !== "string" ||
     typeof value.dataset_name !== "string" ||
-    value.task !== "classification" ||
+    !isSupervisedTask(value.task) ||
     !experimentStatuses.includes(value.status as ExperimentStatus) ||
     !isNumber(value.model_count) ||
     typeof value.created_at !== "string" ||
@@ -602,8 +629,8 @@ function parseFinalModel(value: unknown): FinalModelRecord {
     typeof value.experiment_id !== "string" ||
     typeof value.benchmark_id !== "string" ||
     value.status !== "succeeded" ||
-    !isClassificationEstimator(value.estimator) ||
-    value.task !== "classification" ||
+    !isEstimator(value.estimator) ||
+    !isSupervisedTask(value.task) ||
     typeof value.created_at !== "string" ||
     value.fit_scope !== "all_rows" ||
     !isNumber(value.training_rows) ||
@@ -702,8 +729,8 @@ function parseFinalModelSummary(value: unknown): FinalModelSummary {
     typeof value.dataset_id !== "string" ||
     typeof value.dataset_name !== "string" ||
     typeof value.experiment_id !== "string" ||
-    !isClassificationEstimator(value.estimator) ||
-    value.task !== "classification" ||
+    !isEstimator(value.estimator) ||
+    !isSupervisedTask(value.task) ||
     typeof value.created_at !== "string" ||
     typeof value.primary_metric !== "string" ||
     !isNumber(value.primary_metric_mean) ||
@@ -854,7 +881,7 @@ function parseBenchmarkEstimatorFold(value: unknown): BenchmarkEstimatorFold {
 function parseBenchmarkEntry(value: unknown): BenchmarkEntry {
   if (
     !isJsonObject(value) ||
-    !isClassificationEstimator(value.estimator) ||
+    !isEstimator(value.estimator) ||
     !benchmarkEntryStatuses.includes(value.status as BenchmarkEntryStatus) ||
     (value.rank !== null && !isNumber(value.rank)) ||
     (value.primary_metric_mean !== null && !isNumber(value.primary_metric_mean)) ||
@@ -900,7 +927,7 @@ function parseExperimentResult(value: unknown): ExperimentResult {
     !benchmarkStatuses.includes(value.status as BenchmarkStatus) ||
     typeof value.started_at !== "string" ||
     typeof value.completed_at !== "string" ||
-    value.task !== "classification" ||
+    !isSupervisedTask(value.task) ||
     typeof value.target !== "string" ||
     !isNumber(value.row_count) ||
     !isNumber(value.column_count) ||
@@ -1131,7 +1158,7 @@ export async function analyzeDataset(
 
 export async function createExperiment(
   datasetId: string,
-  estimators: readonly ClassificationEstimator[],
+  estimators: readonly Estimator[],
   foldCount: number,
 ): Promise<ExperimentRecord> {
   let response: Response;

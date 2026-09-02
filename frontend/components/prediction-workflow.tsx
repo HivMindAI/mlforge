@@ -7,7 +7,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { EmptyState, PageErrorState } from "@/components/async-state";
 import {
-  CLASSIFICATION_ESTIMATOR_LABELS,
   MAX_UPLOAD_BYTES,
   type FinalModelRecord,
   type FinalModelSummary,
@@ -15,6 +14,7 @@ import {
   getFinalModels,
   runPrediction,
 } from "@/lib/datasets";
+import { estimatorLabel } from "@/lib/model-display";
 
 type RunState = "idle" | "running" | "opening";
 
@@ -221,7 +221,7 @@ export function PredictionWorkflow({ initialModelId }: PredictionWorkflowProps) 
                 <option value="">Choose a finalized model</option>
                 {models.map((candidate) => (
                   <option key={candidate.final_model_id} value={candidate.final_model_id}>
-                    {CLASSIFICATION_ESTIMATOR_LABELS[candidate.estimator]} — {candidate.dataset_name}
+                    {estimatorLabel(candidate.estimator)} — {candidate.dataset_name}
                   </option>
                 ))}
               </select>

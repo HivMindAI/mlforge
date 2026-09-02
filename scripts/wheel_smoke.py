@@ -26,7 +26,13 @@ from mlforge.final_models import LocalFinalModelStore, fit_selected_model
 from mlforge.inference import predict_frame, write_predictions_csv
 from mlforge.pipelines import CrossValidationSplitConfig, TaskType
 from mlforge.runs import LocalRunStore
-from mlforge.training import LOGISTIC_REGRESSION, TrainingConfig, train
+from mlforge.training import (
+    LOGISTIC_REGRESSION,
+    RANDOM_FOREST_REGRESSOR,
+    RIDGE_REGRESSION,
+    TrainingConfig,
+    train,
+)
 
 TRAINING_CSV = """age,monthly_spend,region,churn
 24,42.50,north,no
@@ -37,6 +43,21 @@ TRAINING_CSV = """age,monthly_spend,region,churn
 39,,south,no
 34,73.40,east,no
 61,125.00,west,yes
+"""
+
+REGRESSION_CSV = """area,price
+10,29.5
+12,34.0
+14,38.5
+16,43.0
+18,47.5
+20,52.0
+22,56.5
+24,61.0
+26,65.5
+28,70.0
+30,74.5
+32,79.0
 """
 
 
@@ -55,6 +76,8 @@ def main() -> None:
         workspace = Path(directory)
         source = workspace / "training.csv"
         source.write_text(TRAINING_CSV, encoding="utf-8", newline="\n")
+        regression_source = workspace / "regression.csv"
+        regression_source.write_text(REGRESSION_CSV, encoding="utf-8", newline="\n")
 
         dataset = load_csv(source, target="churn")
         result = train(
@@ -111,6 +134,29 @@ def main() -> None:
                 }
             ),
         )
+        regression_dataset = load_csv(regression_source, target="price")
+        regression_selection = cross_validate_benchmark(
+            regression_dataset,
+            CrossValidationConfig(
+                task=TaskType.REGRESSION,
+                estimators=(RIDGE_REGRESSION, RANDOM_FOREST_REGRESSOR),
+                primary_metric="root_mean_squared_error",
+                split=CrossValidationSplitConfig(fold_count=3, random_seed=42),
+            ),
+            store=LocalCrossValidationStore(workspace / "regression-cross-validation"),
+        )
+        regression_final = fit_selected_model(
+            regression_dataset,
+            regression_selection,
+            final_model_store=LocalFinalModelStore(workspace / "regression-final-models"),
+            artifact_store=LocalArtifactStore(workspace / "artifacts"),
+        )
+        assert regression_final.artifact_path is not None
+        regression_loaded = load_artifact(regression_final.artifact_path, trusted=True)
+        regression_predictions = predict_frame(
+            regression_loaded,
+            pd.DataFrame({"area": [34, 36]}),
+        )
 
         assert inspected.run_id == result.manifest.run_id
         assert predictions.run_id == result.manifest.run_id
@@ -139,6 +185,13 @@ def main() -> None:
         assert final_inspected.model_id == final_model_result.manifest.final_model_id
         assert final_predictions.run_id == final_model_result.manifest.final_model_id
         assert final_predictions.row_count == 2
+        assert regression_selection.manifest.configuration.task == "regression"
+        assert regression_selection.manifest.winner is not None
+        assert regression_final.manifest.configuration.task == "regression"
+        assert regression_predictions.row_count == 2
+        assert all(
+            isinstance(record.prediction, float) for record in regression_predictions.predictions
+        )
         assert (
             LocalBenchmarkStore(workspace / "benchmarks").read(
                 benchmark_result.manifest.benchmark_id
@@ -160,6 +213,7 @@ def main() -> None:
                     "final_model_id": final_model_result.manifest.final_model_id,
                     "prediction_output": str(prediction_output),
                     "predictions": predictions.to_dict(),
+                    "regression_final_model_id": regression_final.manifest.final_model_id,
                     "version": __version__,
                 },
                 allow_nan=False,

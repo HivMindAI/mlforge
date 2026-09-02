@@ -1,4 +1,4 @@
-"""Leakage-safe shared-fold classification benchmark application service."""
+"""Leakage-safe shared-fold supervised benchmark application service."""
 
 from __future__ import annotations
 
@@ -36,9 +36,8 @@ from mlforge.errors import BenchmarkError, BenchmarkFailedError, MLForgeError
 from mlforge.pipelines import (
     DatasetSplit,
     SplitConfig,
-    TaskType,
     build_model_pipeline,
-    split_classification_folds,
+    split_cross_validation_folds,
     split_partition_sha256,
 )
 from mlforge.runs import (
@@ -187,7 +186,7 @@ def _run_estimator(
     try:
         estimator = create_estimator(
             TrainingConfig(
-                task=TaskType.CLASSIFICATION,
+                task=config.task,
                 estimator=estimator_name,
                 split=SplitConfig(random_seed=config.split.random_seed),
                 preprocessing=config.preprocessing,
@@ -226,7 +225,7 @@ def _run_estimator(
                     pipeline.fit(split.train_features, split.train_target)
                     predictions = cast(Sequence[Any], pipeline.predict(split.validation_features))
                     metrics = evaluate_predictions(
-                        task=TaskType.CLASSIFICATION,
+                        task=config.task,
                         actual=split.validation_target,
                         predicted=predictions,
                     )
@@ -274,7 +273,7 @@ def cross_validate_benchmark(
     *,
     store: LocalCrossValidationStore | None = None,
 ) -> CrossValidationResult:
-    """Run and persist one shared stratified K-fold classification benchmark."""
+    """Run and persist one shared task-appropriate K-fold benchmark."""
     if not isinstance(dataset, LoadedDataset):
         raise BenchmarkError("dataset must be a LoadedDataset value.")
     if not isinstance(config, CrossValidationConfig):
@@ -283,7 +282,7 @@ def cross_validate_benchmark(
     if not isinstance(destination, LocalCrossValidationStore):
         raise BenchmarkError("store must be a LocalCrossValidationStore value.")
 
-    splits = split_classification_folds(dataset, config=config.split)
+    splits = split_cross_validation_folds(dataset, task=config.task, config=config.split)
     fold_snapshots = tuple(
         CrossValidationFoldSnapshot(
             fold_number=index,

@@ -137,7 +137,9 @@ PUBLIC_EXPORTS = {
         "infer_feature_schema",
         "split_dataset",
         "split_classification_folds",
+        "split_cross_validation_folds",
         "split_partition_sha256",
+        "split_regression_folds",
     },
     "mlforge.runs": {
         "RUN_MANIFEST_SCHEMA_VERSION",
@@ -164,6 +166,7 @@ PUBLIC_EXPORTS = {
         "RANDOM_FOREST_CLASSIFIER",
         "RANDOM_FOREST_REGRESSOR",
         "REGRESSION_ESTIMATORS",
+        "REGRESSION_METRICS",
         "RIDGE_REGRESSION",
         "TrainingConfig",
         "TrainingResult",

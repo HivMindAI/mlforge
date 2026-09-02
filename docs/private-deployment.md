@@ -96,8 +96,18 @@ refer to immutable files elsewhere in the same workspace.
 5. Verify `/api/health/ready` and one non-destructive application journey.
 
 For rollback, check out the previously deployed commit, rebuild both images, restore the matching
-volume snapshot if a storage format changed, and start the stack again. The current web metadata
-schema has no migration framework, so deployment changes must not silently mutate it.
+volume snapshot if a storage format changed, and start the stack again.
+
+The v0.5.0 web metadata schema is version 2 and is recorded in SQLite `PRAGMA user_version`.
+Startup transactionally migrates a version-1 classification workspace by rebuilding only the
+experiment table with classification/regression task support while preserving its dependent
+lineage. It adopts an older unversioned workspace only after validating every table column and the
+foreign-key graph. A workspace with a newer schema version or incompatible table shape fails
+closed. Future schema changes must add an explicit ordered migration and a restore test; they must
+never rely on `CREATE TABLE IF NOT EXISTS` as an implicit migration strategy.
+
+Always restore the complete matching volume snapshot when rolling back across a schema change.
+Never manually decrement `PRAGMA user_version`.
 
 ## Production limits
 

@@ -102,18 +102,19 @@ modeling, persistence, and trust boundaries are small enough to understand and t
 
 ### Benchmarking
 
-- Dummy, logistic-regression, and random-forest classification baselines by default.
+- Task-aware defaults: three classification baselines or Ridge and random-forest regression.
 - One shared holdout split, selectable primary metric, deterministic ranking, and fitted in-memory
   winner.
 - A strict aggregate manifest that references every underlying run.
 
 ### Cross-validation
 
-- Deterministic stratified 2-10 fold classification benchmarking.
+- Deterministic 2-10 fold benchmarking: stratified folds for classification and ordinary shuffled
+  K-folds for regression.
 - A fresh estimator and fold-local preprocessing pipeline for every training fold.
 - Identical ordered fold fingerprints for every estimator.
-- Per-fold metrics, arithmetic means, population standard deviations, stability-aware ranking,
-  warnings, timing, and failure location.
+- Per-fold classification or regression metrics, arithmetic means, population standard
+  deviations, direction-aware ranking, warnings, timing, and failure location.
 - Selection evidence only: no nested-tuning or untouched post-selection performance claim.
 
 ### Explicit final-model fitting
@@ -149,7 +150,7 @@ flowchart LR
     A["CSV + explicit target"] --> B["Validation + fingerprint"]
     B --> C["Profile"]
     B --> D["Holdout split"]
-    B --> E["Shared stratified folds"]
+    B --> E["Shared task-aware folds"]
     D --> F["Leakage-safe pipeline fit"]
     E --> G["Fresh fold-local pipeline fits"]
     F --> H["Metrics + run manifest"]
@@ -247,12 +248,13 @@ extra instead:
 python -m pip install -e ".[dev]"
 ```
 
-### Local web preview
+### Local web application
 
 The local single-user web interface supports the application shell, dashboard,
 CSV upload, core-backed validation, explicit target selection, a real data overview, and persisted
-classification comparison configuration, execution, core-backed experiment results, and explicit
-rank-one model finalization. It also provides a Models screen for reviewing completed local models,
+classification or regression comparison configuration, execution, core-backed experiment results,
+and explicit rank-one model finalization. It also provides a Models screen for reviewing completed
+local models,
 their source evidence, input schema, and recorded runtime. Finalized local models can run
 schema-validated prediction CSVs, preview the first 20 results, and download the complete output.
 The Experiments screen lists saved configurations and durable execution states, with links to the
@@ -278,6 +280,13 @@ npm run dev
 
 Open `http://localhost:3000`. Local upload bytes and SQLite metadata are written under the ignored
 `.mlforge-web/` workspace. Use Predictions to select a finalized model and submit a matching CSV.
+The web workspace is intentionally separate from CLI directories such as `mlruns/` and
+`artifacts/`; existing CLI history is not imported automatically. Retrain or explicitly reproduce
+the workflow when an older artifact records a different MLForge or dependency environment.
+
+The Python wheel contains the library, CLI, and FastAPI adapter. The Next.js frontend and private
+container profile are distributed through the repository and source archive because they are built
+with Node.js and Docker rather than installed into Python site-packages.
 
 ### Private deployment profile
 
@@ -291,8 +300,9 @@ backup, upgrade, rollback, and security boundaries.
 
 ## Validation evidence
 
-The v0.3.0 release has a 225-test behavioral suite and enforces a conservative 80% statement
-coverage floor (83.68% measured on Python 3.12 during preparation). CI covers Ubuntu on Python
+The v0.5.0 release candidate has 253 passing behavioral tests at 85.12% statement coverage,
+including regression comparison, finalization, and web prediction coverage. It enforces a
+conservative 80% floor. CI covers Ubuntu on Python
 3.11/3.12 and Windows on Python 3.12, with Ruff, formatting, strict mypy, pytest, package builds,
 `pip check`, and installed-wheel smoke tests. Offline real-data tests exercise scikit-learn's breast
 cancer and diabetes datasets; separate release validation covers Iris, Wine, and breast cancer
@@ -321,12 +331,19 @@ ruff format --check .
 mypy src tests
 python -m pytest
 python -m build
+python scripts/check_source_archive.py dist
 python -m twine check --strict dist/*
+cd frontend
+npm run lint
+npm run build
+npx playwright install chromium
+npm run test:e2e
 ```
 
 `python -m pytest` includes `pytest-cov` and fails below 80% statement coverage. The CI build then
 installs the wheel into a separate environment and executes `scripts/wheel_smoke.py` outside the
-source tree.
+source tree. The Playwright test launches both local servers against an isolated temporary workspace
+and verifies the complete browser workflow through prediction CSV download.
 
 ## Project structure
 
@@ -351,24 +368,27 @@ mlforge/
 
 ## Project status and current limits
 
-**MLForge v0.3.0 is the feature-complete local Python core.** The core remains stable while the
-single-user web interface is delivered in small reviewable phases without redesigning its ML
-algorithms or evidence model.
+**MLForge v0.5.0 combines the feature-complete local Python core with a supported single-user web
+workflow and private deployment profile.** The web adapter reuses the core ML algorithms and
+evidence model rather than implementing a second training system.
 
 MLForge currently supports local, single-process tabular classification/regression. Cross-validation
-and selection-driven final fitting are classification-only. The web preview has a local HTTP
-dataset boundary, dashboard, upload flow, data review, classification experiment configuration,
+and selection-driven final fitting support both tasks. The web application has a local HTTP
+dataset boundary, dashboard, upload flow, data review, supervised experiment configuration,
 a one-worker comparison/finalization runner with persisted job-level status, detailed
 cross-validation results, safe final-model artifact metadata, and a Models screen backed by verified
 local lineage. It also exposes a schema-validated prediction submission workflow for finalized
 local models, bounded result previews, and complete CSV downloads. MLForge does **not**
-provide hyperparameter tuning, nested
-evaluation, an untouched
-post-selection test estimate, regression finalization, shared storage, distributed execution,
-authentication, deployment, or monitoring.
+provide hyperparameter tuning, nested evaluation, an untouched
+post-selection test estimate, shared storage, distributed execution,
+request authentication, authenticated public deployment, or monitoring.
 
-The separate core-roadmap service-infrastructure milestone is postponed and remains conditional on
-real multi-user requirements; it is not active development. The
+The repository does include a private, loopback-bound single-operator deployment profile. It does
+not provide authenticated public deployment, multi-user isolation, public online model serving, or
+production monitoring.
+
+The separate shared-service infrastructure milestone remains conditional on real multi-user
+requirements; it is not active development. The
 [roadmap](ROADMAP.md) records these boundaries so planned work is not presented as shipped
 functionality.
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Literal, cast
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, field_validator
@@ -237,7 +237,7 @@ class DatasetAnalysisResponse(BaseModel):
 
 
 class ExperimentCreateRequest(BaseModel):
-    """Supported inputs for a classification cross-validation comparison."""
+    """Supported inputs for a supervised cross-validation comparison."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -253,7 +253,7 @@ class ExperimentResponse(BaseModel):
 
     experiment_id: UUID
     dataset_id: UUID
-    task: Literal["classification"]
+    task: Literal["classification", "regression"]
     validation_strategy: Literal["cross-validation"]
     fold_count: int
     estimators: tuple[str, ...]
@@ -265,7 +265,7 @@ class ExperimentResponse(BaseModel):
         return cls(
             experiment_id=record.experiment_id,
             dataset_id=record.dataset_id,
-            task="classification",
+            task=cast(Literal["classification", "regression"], record.task),
             validation_strategy="cross-validation",
             fold_count=record.fold_count,
             estimators=record.estimators,
@@ -282,7 +282,7 @@ class ExperimentHistoryItemResponse(BaseModel):
     experiment_id: UUID
     dataset_id: UUID
     dataset_name: str
-    task: Literal["classification"]
+    task: Literal["classification", "regression"]
     status: Literal["configured", "waiting", "running", "complete", "failed"]
     model_count: int
     created_at: datetime
@@ -310,7 +310,7 @@ class ExperimentHistoryItemResponse(BaseModel):
             experiment_id=entry.experiment.experiment_id,
             dataset_id=entry.dataset.dataset_id,
             dataset_name=entry.dataset.original_filename,
-            task="classification",
+            task=cast(Literal["classification", "regression"], entry.experiment.task),
             status=history_status,
             model_count=len(entry.experiment.estimators),
             created_at=entry.experiment.created_at,
@@ -495,7 +495,7 @@ class FinalModelSummaryResponse(BaseModel):
     dataset_name: str
     experiment_id: UUID
     estimator: str
-    task: Literal["classification"]
+    task: Literal["classification", "regression"]
     created_at: datetime
     primary_metric: str
     primary_metric_mean: float
@@ -514,7 +514,7 @@ class FinalModelSummaryResponse(BaseModel):
             dataset_name=dataset.original_filename,
             experiment_id=experiment.experiment_id,
             estimator=manifest.configuration.estimator,
-            task="classification",
+            task=cast(Literal["classification", "regression"], manifest.configuration.task),
             created_at=datetime.fromisoformat(manifest.completed_at),
             primary_metric=manifest.selection.primary_metric,
             primary_metric_mean=manifest.selection.primary_metric_mean,
@@ -545,7 +545,7 @@ class FinalModelResponse(BaseModel):
     benchmark_id: UUID
     status: Literal["succeeded"]
     estimator: str
-    task: Literal["classification"]
+    task: Literal["classification", "regression"]
     created_at: datetime
     fit_scope: Literal["all_rows"]
     training_rows: int
@@ -575,7 +575,7 @@ class FinalModelResponse(BaseModel):
             benchmark_id=UUID(manifest.selection.benchmark_id),
             status="succeeded",
             estimator=manifest.configuration.estimator,
-            task="classification",
+            task=cast(Literal["classification", "regression"], manifest.configuration.task),
             created_at=datetime.fromisoformat(manifest.completed_at),
             fit_scope="all_rows",
             training_rows=manifest.training_rows,
@@ -802,7 +802,7 @@ class ExperimentResultResponse(BaseModel):
     status: Literal["succeeded", "partial", "failed"]
     started_at: datetime
     completed_at: datetime
-    task: Literal["classification"]
+    task: Literal["classification", "regression"]
     target: str
     row_count: int
     column_count: int
@@ -824,7 +824,7 @@ class ExperimentResultResponse(BaseModel):
             status=manifest.status.value,
             started_at=datetime.fromisoformat(manifest.started_at),
             completed_at=datetime.fromisoformat(manifest.completed_at),
-            task="classification",
+            task=cast(Literal["classification", "regression"], manifest.configuration.task),
             target=manifest.dataset.target,
             row_count=manifest.dataset.row_count,
             column_count=manifest.dataset.column_count,

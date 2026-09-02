@@ -4,41 +4,12 @@ import { useCallback, useEffect, useState } from "react";
 
 import { FinalizeModel } from "@/components/finalize-model";
 import {
-  CLASSIFICATION_ESTIMATOR_LABELS,
   type BenchmarkEntry,
   type BenchmarkMetricSummary,
   type ExperimentResult,
   getExperimentResults,
 } from "@/lib/datasets";
-
-const metricLabels: Readonly<Record<string, string>> = {
-  accuracy: "Accuracy",
-  balanced_accuracy: "Balanced Accuracy",
-  f1_macro: "F1 Macro",
-  f1_weighted: "F1 Weighted",
-  precision_macro: "Precision Macro",
-  recall_macro: "Recall Macro",
-};
-
-const percentFormatter = new Intl.NumberFormat("en-US", {
-  style: "percent",
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
-
-function metricLabel(name: string): string {
-  return (
-    metricLabels[name] ??
-    name
-      .split("_")
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-      .join(" ")
-  );
-}
-
-function formatScore(value: number | null): string {
-  return value === null ? "—" : percentFormatter.format(value);
-}
+import { estimatorLabel, formatMetricValue, metricLabel } from "@/lib/model-display";
 
 function formatDuration(seconds: number): string {
   if (seconds < 1) return `${Math.round(seconds * 1000)} ms`;
@@ -125,8 +96,13 @@ export function ExperimentResults({ experimentId }: ExperimentResultsProps) {
 
   const entries = rankedEntries(result);
   const winner = entries.find((entry) => entry.rank === 1) ?? null;
-  const winnerAccuracy = winner ? metricFor(winner, "accuracy") : null;
-  const winnerF1 = winner ? metricFor(winner, "f1_macro") : null;
+  const secondaryMetricNames =
+    result.task === "classification"
+      ? (["accuracy", "f1_macro"] as const)
+      : (["mean_absolute_error", "r2"] as const);
+  const winnerSecondaryMetrics = secondaryMetricNames.map((name) =>
+    winner ? metricFor(winner, name) : null,
+  );
   const failedEntryCount = entries.filter((entry) => entry.status === "failed").length;
 
   return (
@@ -135,7 +111,7 @@ export function ExperimentResults({ experimentId }: ExperimentResultsProps) {
         <div>
           <span className="section-kicker">Results</span>
           <h2 id="results-title">Best model</h2>
-          <p>{winner ? CLASSIFICATION_ESTIMATOR_LABELS[winner.estimator] : "No ranked model"}</p>
+          <p>{winner ? estimatorLabel(winner.estimator) : "No ranked model"}</p>
         </div>
         <dl className="results-dataset-context" aria-label="Result dataset context">
           <div>
@@ -153,19 +129,31 @@ export function ExperimentResults({ experimentId }: ExperimentResultsProps) {
         <dl className="result-highlights" aria-label="Best model metrics">
           <div>
             <dt>{metricLabel(result.primary_metric)}</dt>
-            <dd>{formatScore(winner.primary_metric_mean)}</dd>
+            <dd>{formatMetricValue(result.primary_metric, winner.primary_metric_mean)}</dd>
           </div>
           <div>
             <dt>Standard deviation</dt>
-            <dd>{formatScore(winner.primary_metric_standard_deviation)}</dd>
+            <dd>
+              {formatMetricValue(result.primary_metric, winner.primary_metric_standard_deviation)}
+            </dd>
           </div>
           <div>
-            <dt>Accuracy</dt>
-            <dd>{formatScore(winnerAccuracy?.mean ?? null)}</dd>
+            <dt>{metricLabel(secondaryMetricNames[0])}</dt>
+            <dd>
+              {formatMetricValue(
+                secondaryMetricNames[0],
+                winnerSecondaryMetrics[0]?.mean ?? null,
+              )}
+            </dd>
           </div>
           <div>
-            <dt>F1 Macro</dt>
-            <dd>{formatScore(winnerF1?.mean ?? null)}</dd>
+            <dt>{metricLabel(secondaryMetricNames[1])}</dt>
+            <dd>
+              {formatMetricValue(
+                secondaryMetricNames[1],
+                winnerSecondaryMetrics[1]?.mean ?? null,
+              )}
+            </dd>
           </div>
         </dl>
       ) : null}
@@ -201,8 +189,8 @@ export function ExperimentResults({ experimentId }: ExperimentResultsProps) {
                 <th scope="col">Model</th>
                 <th scope="col">{metricLabel(result.primary_metric)}</th>
                 <th scope="col">Std. dev.</th>
-                <th scope="col">Accuracy</th>
-                <th scope="col">F1 Macro</th>
+                <th scope="col">{metricLabel(secondaryMetricNames[0])}</th>
+                <th scope="col">{metricLabel(secondaryMetricNames[1])}</th>
                 <th scope="col">Status</th>
               </tr>
             </thead>
@@ -210,11 +198,17 @@ export function ExperimentResults({ experimentId }: ExperimentResultsProps) {
               {entries.map((entry) => (
                 <tr key={entry.estimator}>
                   <td>{entry.rank ?? "—"}</td>
-                  <th scope="row">{CLASSIFICATION_ESTIMATOR_LABELS[entry.estimator]}</th>
-                  <td>{formatScore(entry.primary_metric_mean)}</td>
-                  <td>{formatScore(entry.primary_metric_standard_deviation)}</td>
-                  <td>{formatScore(metricFor(entry, "accuracy")?.mean ?? null)}</td>
-                  <td>{formatScore(metricFor(entry, "f1_macro")?.mean ?? null)}</td>
+                  <th scope="row">{estimatorLabel(entry.estimator)}</th>
+                  <td>{formatMetricValue(result.primary_metric, entry.primary_metric_mean)}</td>
+                  <td>
+                    {formatMetricValue(
+                      result.primary_metric,
+                      entry.primary_metric_standard_deviation,
+                    )}
+                  </td>
+                  {secondaryMetricNames.map((name) => (
+                    <td key={name}>{formatMetricValue(name, metricFor(entry, name)?.mean ?? null)}</td>
+                  ))}
                   <td>
                     <span className={`result-entry-status result-entry-${entry.status}`}>
                       {entry.status === "succeeded" ? "Complete" : "Failed"}
@@ -239,14 +233,14 @@ export function ExperimentResults({ experimentId }: ExperimentResultsProps) {
           {entries.map((entry) => (
             <details key={entry.estimator} open={entry.rank === 1}>
               <summary>
-                <span>{CLASSIFICATION_ESTIMATOR_LABELS[entry.estimator]}</span>
+                <span>{estimatorLabel(entry.estimator)}</span>
                 <span>{entry.rank === null ? "Failed" : `Rank ${entry.rank}`}</span>
               </summary>
               {entry.status === "succeeded" ? (
                 <div
                   className="data-table-wrap"
                   role="region"
-                  aria-label={`${CLASSIFICATION_ESTIMATOR_LABELS[entry.estimator]} metric evidence table`}
+                  aria-label={`${estimatorLabel(entry.estimator)} metric evidence table`}
                   tabIndex={0}
                 >
                   <table className="data-table metric-evidence-table">
@@ -264,10 +258,12 @@ export function ExperimentResults({ experimentId }: ExperimentResultsProps) {
                       {entry.metrics.map((metric) => (
                         <tr key={metric.name}>
                           <th scope="row">{metricLabel(metric.name)}</th>
-                          <td>{formatScore(metric.mean)}</td>
-                          <td>{formatScore(metric.standard_deviation)}</td>
+                          <td>{formatMetricValue(metric.name, metric.mean)}</td>
+                          <td>{formatMetricValue(metric.name, metric.standard_deviation)}</td>
                           {metric.fold_values.map((value, index) => (
-                            <td key={`${metric.name}-${index}`}>{formatScore(value)}</td>
+                            <td key={`${metric.name}-${index}`}>
+                              {formatMetricValue(metric.name, value)}
+                            </td>
                           ))}
                         </tr>
                       ))}

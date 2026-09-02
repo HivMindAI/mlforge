@@ -8,8 +8,11 @@ owner accepts the current one with `DONE`.
 
 - **Critical:** Milestones 0-4 establish a correct, usable local workflow.
 - **Important:** Milestones 5-6 make artifacts usable and prepare a responsible public release.
-- **Feature-complete local product:** Milestones 7-8.1 complete the local workflow in v0.3.0.
-  Milestones 9+ are postponed conditional proposals, not active development commitments.
+- **Feature-complete local product:** Milestones 7-8.1 complete the Python workflow in v0.3.0;
+  Milestone 8.2 packages that workflow for one local web operator in v0.4.0, and Milestone 8.3
+  brings regression parity in v0.5.0.
+- **Conditional platform work:** Shared-service portions of Milestones 9-10 remain postponed
+  proposals, not active development commitments.
 
 ## Critical milestones
 
@@ -274,23 +277,70 @@ suite.
 into a fitted all-row artifact with immutable lineage, while refusing changed evidence/data and
 making no new evaluation or deployment-performance claim.
 
-## Project state after v0.3.0
+### Milestone 8.2 - Single-user web workflow and private release profile
 
-**Status:** Feature complete / maintenance mode.
+**Status:** Accepted by the project owner on 2026-09-02; complete for v0.4.0.
 
-v0.3.0 completes MLForge's intended local, single-process workflow. Future changes should normally
-be limited to real bug fixes, security fixes, compatibility fixes, documentation corrections, and
-other justified maintenance work. No additional feature milestone begins automatically.
+**What changes:** Add a thin FastAPI adapter, SQLite metadata, one bounded worker, a Next.js
+interface for the complete supported classification journey, and a private two-container profile.
+Version the web database, include all application sources in the source distribution, and automate
+the critical browser journey without changing the core ML evidence model.
 
-Milestone 9 remains postponed and conditional. MLForge does not claim an HTTP API, web UI,
-background workers, shared experiment storage, distributed execution, multi-user support,
-authentication, hosted services, or a model-registry server.
+**Why:** The stable local core is usable from Python and the CLI, but one trusted operator also needs
+an approachable interface and a repeatable private deployment path.
+
+**Dependencies:** Milestone 8.1 and the existing immutable local stores.
+
+**Testing:** Core and HTTP integration tests, schema adoption/restore tests, frontend lint and
+production build, Playwright golden-path coverage, package/source-archive validation, and Compose
+build/start/readiness smoke testing.
+
+**Done means:** A clean checkout or source archive can run the private application, complete upload
+through prediction download, preserve a versioned workspace across restart/restore, and present
+documentation and release metadata that match the shipped product.
+
+### Milestone 8.3 - Regression workflow parity
+
+**Status:** Accepted by the project owner on 2026-09-02; complete for v0.5.0.
+
+**What changes:** Extend deterministic cross-validation, winner selection, verified all-row final
+fitting, CLI orchestration, the single-user web workflow, and prediction to regression. Use ordinary
+shuffled K-folds without target binning, rank by lower-is-better RMSE by default, preserve full MAE,
+R-squared, and RMSE evidence, and migrate the web workspace without losing existing lineage.
+
+**Why:** Regression already worked for individual held-out training, but users could not compare
+regressors, select a stable winner, finalize it, or complete that journey in the web interface.
+
+**Dependencies:** Milestone 8.2 and the existing regression training/artifact contracts.
+
+**Testing:** Task-aware fold policy and metric direction, v1 manifest read compatibility, v1-to-v2
+SQLite migration, core/CLI/HTTP finalization and prediction, frontend lint/build, and both browser
+golden paths.
+
+**Done means:** Classification remains unchanged, while a regression CSV can move from explicit
+target selection through fair comparison, immutable selection evidence, final fitting, and
+schema-validated predictions in Python, CLI, and the local web product.
+
+## Project state for v0.5.0
+
+**Status:** Single-user release candidate.
+
+v0.3.0 established the local Python core, v0.4.0 added the repository- and
+source-archive-distributed web interface and private deployment profile, and v0.5.0 brings
+classification/regression parity to comparison, finalization, and prediction.
+The API, SQLite database, worker, uploaded files, model evidence, artifacts, and prediction outputs
+still belong to one local workspace and one active MLForge process.
+
+Milestone 9 remains postponed for shared or multi-user infrastructure. MLForge does not claim
+distributed execution, multi-user support, request authentication, hosted public services, public
+online model serving, or a model-registry server.
 
 ## Conditional improvements
 
 ### Milestone 9 - Service adapters and shared experiment storage
 
-**Status:** Postponed / conditional; untouched by v0.3.0.
+**Status:** Postponed / conditional for shared and multi-user infrastructure. The v0.5.0 local API
+does not activate this milestone.
 
 **What changes:** Only if multi-user or remote execution is a demonstrated requirement, introduce a
 versioned HTTP API, transactional persistence, shared artifact storage, and background execution as
@@ -313,14 +363,15 @@ recovery.
 **Done means:** Remote behavior preserves the same domain semantics as the local API, failures are
 observable and recoverable, and no infrastructure concern leaks into core ML modules.
 
-### Milestone 10 - Deployment, observability, and user interface
+### Milestone 10 - Public deployment, observability, and multi-user interface
 
-**Status:** Postponed / conditional; not active development.
+**Status:** Partially superseded by Milestone 8.2 for one private operator. Public and multi-user
+capabilities remain postponed and are not active development.
 
-**What changes:** Evaluate a web interface, online inference, model promotion/rollback, prediction
-telemetry, drift analysis, authentication/authorization, containerization, and production release
-automation individually. Implement only capabilities backed by accepted use cases and measurable
-operational requirements.
+**What changes:** Evaluate public online inference, model promotion/rollback, prediction telemetry,
+drift analysis, authentication/authorization, shared storage, and production release automation
+individually. Implement only capabilities backed by accepted use cases and measurable operational
+requirements.
 
 **Why:** A dashboard or monitoring stack is useful only when there are real users, deployed models,
 service-level goals, and feedback loops to support.

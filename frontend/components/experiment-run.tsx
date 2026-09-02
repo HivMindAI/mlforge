@@ -6,7 +6,6 @@ import { useCallback, useEffect, useState } from "react";
 import { PageErrorState, PageLoadingState } from "@/components/async-state";
 import { ExperimentResults } from "@/components/experiment-results";
 import {
-  CLASSIFICATION_ESTIMATOR_LABELS,
   type DatasetRecord,
   type ExperimentRecord,
   getDataset,
@@ -16,13 +15,7 @@ import {
   type JobRecord,
   startExperiment,
 } from "@/lib/datasets";
-
-function formatMetric(metric: string): string {
-  return metric
-    .split("_")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
+import { estimatorLabel, metricLabel, taskLabel } from "@/lib/model-display";
 
 function statusLabel(job: JobRecord | null): string {
   if (!job) return "Configured";
@@ -177,7 +170,7 @@ export function ExperimentRun({ experimentId }: ExperimentRunProps) {
       <dl className="configuration-summary" aria-label="Experiment configuration">
         <div>
           <dt>Problem type</dt>
-          <dd>Classification</dd>
+          <dd>{taskLabel(experiment.task)}</dd>
         </div>
         <div>
           <dt>Validation</dt>
@@ -189,7 +182,7 @@ export function ExperimentRun({ experimentId }: ExperimentRunProps) {
         </div>
         <div>
           <dt>Ranking metric</dt>
-          <dd>{formatMetric(experiment.primary_metric)}</dd>
+          <dd>{metricLabel(experiment.primary_metric)}</dd>
         </div>
       </dl>
 
@@ -289,7 +282,7 @@ export function ExperimentRun({ experimentId }: ExperimentRunProps) {
         </div>
         <ul>
           {experiment.estimators.map((estimator) => (
-            <li key={estimator}>{CLASSIFICATION_ESTIMATOR_LABELS[estimator]}</li>
+            <li key={estimator}>{estimatorLabel(estimator)}</li>
           ))}
         </ul>
       </section>

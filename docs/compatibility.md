@@ -20,12 +20,18 @@ Starting with `1.0.0`:
 
 Published release contents are immutable. A fix always receives a new version.
 
-## Maintenance mode after v0.3.0
+## Supported product after v0.5.0
 
-v0.3.0 is the feature-complete release of the intended local MLForge product. Subsequent releases
-should normally contain only real bug fixes, security fixes, compatibility fixes, documentation
-corrections, and other justified maintenance changes. Conditional service, multi-user, hosted, and
-deployment capabilities are not part of the supported product and are not an active roadmap.
+v0.3.0 is the feature-complete release of the local Python workflow. v0.4.0 adds a supported local
+FastAPI adapter, Next.js interface, versioned SQLite workspace, and private two-container profile
+for one trusted operator. v0.5.0 extends cross-validation selection, final fitting, and the web
+journey to regression. The frontend and deployment sources are shipped in the source archive and
+repository; they are not installed into Python site-packages by the wheel.
+
+Shared-service, multi-user, authenticated public hosting, and distributed execution remain
+conditional roadmap work. The single-user product should otherwise receive focused bug, security,
+compatibility, documentation, and justified workflow improvements rather than unbounded platform
+expansion.
 
 ## Public API
 
@@ -78,13 +84,28 @@ Final-model records are separate because all selected rows are fitted and no hel
 Their selection values live under `selection_evidence`; `final_fit` records only `all_rows` scope and
 dimensions, while the artifact contract records identity plus executable-payload size and SHA-256.
 
+Cross-validation and final-model manifest version 2 add regression semantics. Readers continue to
+accept version-1 classification manifests; version 1 cannot represent regression evidence.
+
 Artifact manifest version 1 remains readable and represents evaluated training-run lineage.
-Version 2 uses a generic model identity plus an explicit lineage kind and manifest digest; the
-initial version-2 writer is reserved for final-model lineage.
+Version 2 uses a generic model identity plus an explicit lineage kind and manifest digest.
 
 Model artifacts have a deliberately narrower boundary than the Python API. Trusted loading
 requires exact Python, MLForge, pandas, NumPy, SciPy, and scikit-learn versions recorded at training
 time. MLForge does not promise cross-version pickle compatibility. See [artifact security](security.md).
+
+## Web workspace schema
+
+The SQLite web workspace records its schema with `PRAGMA user_version`. Version 1 represents the
+classification-only experiment constraint introduced by the first single-user web release.
+Version 2 transactionally broadens experiments to classification or regression while preserving
+dependent jobs, finalizations, and predictions. Existing unversioned workspaces are adopted only
+after the complete table shape and foreign-key graph validate. A workspace from a newer unsupported
+schema fails closed instead of being guessed or silently rewritten.
+
+Back up the complete workspace before upgrading. The database is not sufficient by itself because
+its rows refer to uploaded CSVs, immutable benchmark evidence, artifacts, and prediction files in
+the same directory tree.
 
 ## Deprecation and change review
 

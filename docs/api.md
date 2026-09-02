@@ -42,6 +42,8 @@ Import from `mlforge.pipelines`.
 | `split_dataset(dataset, *, task, config=None)` | Create copied train/validation features and targets before fitting. |
 | `CrossValidationSplitConfig` | Validated 2-10 fold count and reproducible shuffle seed. |
 | `split_classification_folds(dataset, *, config=None)` | Create deterministic, stratified, index-preserving classification folds. |
+| `split_regression_folds(dataset, *, config=None)` | Create deterministic, shuffled, index-preserving regression folds with at least two validation rows per fold. |
+| `split_cross_validation_folds(dataset, *, task, config=None)` | Dispatch to the task-appropriate fold policy. |
 | `split_partition_sha256(split)` | Fingerprint one exact train/validation row partition. |
 | `DatasetSplit` | Index-preserving split result with copied partitions and actual stratification state. |
 | `FeatureOverrides` | Explicit numeric/categorical role overrides for ambiguous columns. |
@@ -70,7 +72,7 @@ Import from `mlforge.training`.
 | `DUMMY_CLASSIFIER`, `LOGISTIC_REGRESSION`, `RANDOM_FOREST_CLASSIFIER` | Classification estimator identifiers. |
 | `RIDGE_REGRESSION`, `RANDOM_FOREST_REGRESSOR` | Regression estimator identifiers. |
 | `CLASSIFICATION_ESTIMATORS`, `REGRESSION_ESTIMATORS`, `ALL_ESTIMATORS` | Supported estimator collections. |
-| `CLASSIFICATION_METRICS` | Stable classification metrics accepted as benchmark objectives. |
+| `CLASSIFICATION_METRICS`, `REGRESSION_METRICS` | Stable task-specific metrics accepted as cross-validation objectives. |
 
 If `run_store` is omitted, `train` writes to `mlruns/`. Expected failures after a run begins are
 recorded and raised as `TrainingFailedError`; invalid configuration fails before a run starts.
@@ -89,8 +91,8 @@ Import from `mlforge.benchmarks`.
 | `LocalBenchmarkStore` | Create-only validated local benchmark-manifest storage. |
 | `DEFAULT_CLASSIFICATION_BENCHMARK_ESTIMATORS` | Dummy, logistic-regression, and random-forest defaults. |
 | `BENCHMARK_MANIFEST_SCHEMA_VERSION` | Independent aggregate manifest schema version. |
-| `CrossValidationConfig` | Unique classifiers, primary metric, shared fold plan, preprocessing, and feature roles. |
-| `cross_validate_benchmark(dataset, config, *, store=None)` | Fit and evaluate classifiers independently across one shared stratified fold plan. |
+| `CrossValidationConfig` | Task-compatible estimators, primary metric, shared fold plan, preprocessing, and feature roles. |
+| `cross_validate_benchmark(dataset, config, *, store=None)` | Fit and evaluate estimators independently across one shared task-appropriate fold plan. |
 | `CrossValidationResult` | Immutable selection manifest and its persisted path; no fitted deployment model. |
 | `CrossValidationManifest`, `CrossValidationEntry` | Strict aggregate protocol and terminal per-estimator outcomes. |
 | `CrossValidationFoldSnapshot`, `CrossValidationFoldResult` | Exact shared partition identity and one estimator's fold metrics. |

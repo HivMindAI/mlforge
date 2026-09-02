@@ -8,32 +8,49 @@ import { useCallback, useEffect, useState } from "react";
 import { PageErrorState, PageLoadingState } from "@/components/async-state";
 import {
   analyzeDataset,
-  type ClassificationEstimator,
   createExperiment,
   type DatasetAnalysis,
+  type Estimator,
+  type SupervisedTask,
 } from "@/lib/datasets";
 
-const estimatorOptions: readonly Readonly<{
-  id: ClassificationEstimator;
+type EstimatorOption = Readonly<{
+  id: Estimator;
   label: string;
   description: string;
-}>[] = [
-  {
-    id: "logistic-regression",
-    label: "Logistic Regression",
-    description: "Linear classification baseline with scaled numerical features.",
-  },
-  {
-    id: "random-forest-classifier",
-    label: "Random Forest Classifier",
-    description: "Tree ensemble with deterministic, resource-bounded defaults.",
-  },
-  {
-    id: "dummy-classifier",
-    label: "Dummy Classifier",
-    description: "Prior-based reference baseline for judging useful performance.",
-  },
-];
+}>;
+
+const estimatorOptions: Readonly<Record<SupervisedTask, readonly EstimatorOption[]>> = {
+  classification: [
+    {
+      id: "logistic-regression",
+      label: "Logistic Regression",
+      description: "Linear classification baseline with scaled numerical features.",
+    },
+    {
+      id: "random-forest-classifier",
+      label: "Random Forest Classifier",
+      description: "Tree ensemble with deterministic, resource-bounded defaults.",
+    },
+    {
+      id: "dummy-classifier",
+      label: "Dummy Classifier",
+      description: "Prior-based reference baseline for judging useful performance.",
+    },
+  ],
+  regression: [
+    {
+      id: "ridge-regression",
+      label: "Ridge Regression",
+      description: "Regularized linear baseline with scaled numerical features.",
+    },
+    {
+      id: "random-forest-regressor",
+      label: "Random Forest Regressor",
+      description: "Nonlinear tree ensemble with deterministic, resource-bounded defaults.",
+    },
+  ],
+};
 
 type ExperimentConfigurationProps = Readonly<{ datasetId: string }>;
 
@@ -43,9 +60,9 @@ export function ExperimentConfiguration({ datasetId }: ExperimentConfigurationPr
   const [loadError, setLoadError] = useState<string | null>(null);
   const [requestVersion, setRequestVersion] = useState(0);
   const [foldCount, setFoldCount] = useState(5);
-  const [selectedEstimators, setSelectedEstimators] = useState<
-    readonly ClassificationEstimator[]
-  >(estimatorOptions.map((option) => option.id));
+  const [selectedEstimators, setSelectedEstimators] = useState<readonly Estimator[]>(
+    estimatorOptions.classification.map((option) => option.id),
+  );
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -58,7 +75,14 @@ export function ExperimentConfiguration({ datasetId }: ExperimentConfigurationPr
   useEffect(() => {
     const controller = new AbortController();
     void analyzeDataset(datasetId, controller.signal)
-      .then(setAnalysis)
+      .then((loadedAnalysis) => {
+        setAnalysis(loadedAnalysis);
+        if (loadedAnalysis.target.task_hint !== "undetermined") {
+          setSelectedEstimators(
+            estimatorOptions[loadedAnalysis.target.task_hint].map((option) => option.id),
+          );
+        }
+      })
       .catch((requestError: unknown) => {
         if (requestError instanceof DOMException && requestError.name === "AbortError") return;
         setLoadError(requestError instanceof Error ? requestError.message : "Dataset review failed.");
@@ -66,7 +90,7 @@ export function ExperimentConfiguration({ datasetId }: ExperimentConfigurationPr
     return () => controller.abort();
   }, [datasetId, requestVersion]);
 
-  function toggleEstimator(estimator: ClassificationEstimator, checked: boolean) {
+  function toggleEstimator(estimator: Estimator, checked: boolean) {
     setFormError(null);
     setSelectedEstimators((current) =>
       checked ? [...current, estimator] : current.filter((item) => item !== estimator),
@@ -117,6 +141,10 @@ export function ExperimentConfiguration({ datasetId }: ExperimentConfigurationPr
     );
   }
 
+  const task = analysis.target.task_hint;
+  const supportedTask = task === "classification" || task === "regression" ? task : null;
+  const options = supportedTask ? estimatorOptions[supportedTask] : [];
+
   return (
     <div className="page experiment-page">
       <header className="experiment-header">
@@ -145,7 +173,7 @@ export function ExperimentConfiguration({ datasetId }: ExperimentConfigurationPr
         </div>
       </dl>
 
-      {analysis.target.task_hint === "classification" ? (
+      {supportedTask ? (
         <form className="experiment-form" onSubmit={handleSubmit} aria-busy={saving}>
           {formError ? (
             <div className="form-message form-message-error" role="alert">
@@ -158,9 +186,14 @@ export function ExperimentConfiguration({ datasetId }: ExperimentConfigurationPr
             <div className="configuration-row">
               <div>
                 <strong>Cross-validation</strong>
-                <p>Shared deterministic stratified folds for every selected model.</p>
+                <p>
+                  Shared deterministic {supportedTask === "classification" ? "stratified" : "shuffled"}
+                  {" "}folds for every selected model.
+                </p>
               </div>
-              <span className="fixed-value">Balanced accuracy</span>
+              <span className="fixed-value">
+                {supportedTask === "classification" ? "Balanced accuracy" : "Root mean squared error"}
+              </span>
             </div>
             <label className="fold-field" htmlFor="fold-count">
               <span>Folds</span>
@@ -188,10 +221,10 @@ export function ExperimentConfiguration({ datasetId }: ExperimentConfigurationPr
           >
             <legend>Models</legend>
             <p className="fieldset-description" id="model-selection-description">
-              Select at least two supported classifiers.
+              Select at least two supported {supportedTask === "classification" ? "classifiers" : "regressors"}.
             </p>
             <div className="model-options">
-              {estimatorOptions.map((option) => (
+              {options.map((option) => (
                 <label key={option.id} className="model-option">
                   <input
                     type="checkbox"
@@ -208,8 +241,8 @@ export function ExperimentConfiguration({ datasetId }: ExperimentConfigurationPr
           </fieldset>
 
           <aside className="capability-note">
-            Final model fitting is available only after a completed classification
-            cross-validation comparison. Training is not started when this configuration is saved.
+            Final model fitting is available after a completed cross-validation comparison.
+            Training is not started when this configuration is saved.
           </aside>
 
           <div className="experiment-actions">
@@ -221,35 +254,11 @@ export function ExperimentConfiguration({ datasetId }: ExperimentConfigurationPr
         </form>
       ) : (
         <section className="unsupported-comparison" aria-labelledby="unsupported-title">
-          <h2 id="unsupported-title">
-            {analysis.target.task_hint === "regression"
-              ? "Regression comparison is not available"
-              : "Problem type could not be determined"}
-          </h2>
-          {analysis.target.task_hint === "regression" ? (
-            <>
-              <p>
-                MLForge currently supports Ridge Regression and Random Forest Regression as
-                individual holdout runs. It does not provide a shared regression comparison or
-                regression finalization workflow.
-              </p>
-              <dl>
-                <div>
-                  <dt>Available individual estimators</dt>
-                  <dd>Ridge Regression, Random Forest Regression</dd>
-                </div>
-                <div>
-                  <dt>Comparison</dt>
-                  <dd>Classification only</dd>
-                </div>
-              </dl>
-            </>
-          ) : (
-            <p>
-              Choose a target with enough non-missing variation for MLForge to infer a supported
-              task before configuring a comparison.
-            </p>
-          )}
+          <h2 id="unsupported-title">Problem type could not be determined</h2>
+          <p>
+            Choose a target with enough non-missing variation for MLForge to infer a supported
+            task before configuring a comparison.
+          </p>
         </section>
       )}
     </div>

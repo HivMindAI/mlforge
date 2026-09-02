@@ -129,7 +129,9 @@ export function ExperimentList() {
                       </Link>
                     </th>
                     <td>{experiment.dataset_name}</td>
-                    <td>Classification</td>
+                    <td>
+                      {experiment.task === "classification" ? "Classification" : "Regression"}
+                    </td>
                     <td>{experiment.model_count}</td>
                     <td>
                       <span className={`job-status job-status-${experiment.status}`}>

@@ -9,8 +9,10 @@ from mlforge.pipelines.preprocessing import (
 )
 from mlforge.pipelines.splitting import (
     split_classification_folds,
+    split_cross_validation_folds,
     split_dataset,
     split_partition_sha256,
+    split_regression_folds,
 )
 from mlforge.pipelines.types import (
     CrossValidationSplitConfig,
@@ -39,5 +41,7 @@ __all__ = [
     "infer_feature_schema",
     "split_dataset",
     "split_classification_folds",
+    "split_cross_validation_folds",
     "split_partition_sha256",
+    "split_regression_folds",
 ]

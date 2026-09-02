@@ -4,20 +4,14 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 import {
-  CLASSIFICATION_ESTIMATOR_LABELS,
-  type ClassificationEstimator,
+  type Estimator,
   type FinalizationRecord,
   type FinalModelRecord,
   getExperimentFinalization,
   getFinalModel,
   startFinalization,
 } from "@/lib/datasets";
-
-const percentFormatter = new Intl.NumberFormat("en-US", {
-  style: "percent",
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
+import { estimatorLabel, formatMetricValue, metricLabel } from "@/lib/model-display";
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -35,16 +29,9 @@ function formatDate(value: string): string {
   }).format(new Date(value));
 }
 
-function metricLabel(name: string): string {
-  return name
-    .split("_")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
 type FinalizeModelProps = Readonly<{
   experimentId: string;
-  estimator: ClassificationEstimator;
+  estimator: Estimator;
 }>;
 
 export function FinalizeModel({ experimentId, estimator }: FinalizeModelProps) {
@@ -186,7 +173,7 @@ export function FinalizeModel({ experimentId, estimator }: FinalizeModelProps) {
       {!loading && !finalization && !error ? (
         <div className="finalize-action">
           <div>
-            <strong>{CLASSIFICATION_ESTIMATOR_LABELS[estimator]}</strong>
+            <strong>{estimatorLabel(estimator)}</strong>
             <p>
               This creates a new immutable final-model record and a prediction-ready local artifact.
             </p>
@@ -241,7 +228,7 @@ export function FinalizeModel({ experimentId, estimator }: FinalizeModelProps) {
         <div className="final-model-details">
           <header>
             <span className="section-kicker">Model finalized</span>
-            <h4>{CLASSIFICATION_ESTIMATOR_LABELS[model.estimator]}</h4>
+            <h4>{estimatorLabel(model.estimator)}</h4>
             <p>Created {formatDate(model.created_at)}</p>
           </header>
 
@@ -256,11 +243,16 @@ export function FinalizeModel({ experimentId, estimator }: FinalizeModelProps) {
             </div>
             <div>
               <dt>{metricLabel(model.primary_metric)}</dt>
-              <dd>{percentFormatter.format(model.primary_metric_mean)}</dd>
+              <dd>{formatMetricValue(model.primary_metric, model.primary_metric_mean)}</dd>
             </div>
             <div>
               <dt>CV std. dev.</dt>
-              <dd>{percentFormatter.format(model.primary_metric_standard_deviation)}</dd>
+              <dd>
+                {formatMetricValue(
+                  model.primary_metric,
+                  model.primary_metric_standard_deviation,
+                )}
+              </dd>
             </div>
           </dl>
 

@@ -7,6 +7,53 @@ All notable MLForge changes are recorded here. The project follows semantic vers
 
 No changes yet.
 
+## [0.5.0] - 2026-09-02
+
+### Added
+
+- Add deterministic shuffled K-fold regression comparison with Ridge Regression and Random Forest
+  Regressor, complete MAE, R-squared, and RMSE fold evidence, and lower-is-better RMSE ranking.
+- Extend selection-driven all-row final fitting, trusted artifacts, CLI comparison, the local web
+  workflow, and browser verification through regression prediction.
+- Add a small house-price regression example and prediction input for local and browser workflows.
+
+### Compatibility
+
+- Write cross-validation and final-model manifest schema version 2 while continuing to read
+  immutable version-1 classification manifests.
+- Upgrade the SQLite web workspace to schema version 2 with a transactional migration that
+  preserves existing experiment, job, finalization, and prediction lineage.
+
+## [0.4.0] - 2026-08-31
+
+### Added
+
+- Add a local single-user FastAPI and Next.js application covering CSV upload, explicit target
+  selection, dataset profiling, persisted classification experiments, deterministic
+  cross-validation, rank-one final fitting, model inspection, schema-validated batch prediction,
+  bounded previews, and complete CSV downloads.
+- Add SQLite-backed dataset, experiment, job, finalization, and prediction metadata with one
+  bounded in-process worker and honest restart recovery for interrupted jobs.
+- Add a private two-container deployment profile with an internal API network, loopback-only browser
+  port, unprivileged containers, health probes, and one durable workspace volume.
+- Add explicit web schema version 1, transactional adoption of existing unversioned workspaces,
+  structural and foreign-key validation, newer-schema rejection, and backup/restore coverage.
+- Add a Playwright golden-path test for the complete supported browser workflow.
+
+### Changed
+
+- Distribute the frontend and private-deployment sources in the source archive while keeping the
+  Python wheel focused on the importable core and FastAPI adapter.
+- Align the Python package and private frontend on version 0.4.0 and update the roadmap,
+  compatibility policy, release validation, and deployment guidance to describe the product that
+  is actually shipped.
+
+### Security and operations
+
+- Keep the supported deployment limited to one trusted operator behind an SSH tunnel or reviewed
+  private access gateway. Authentication, public exposure, multi-tenancy, distributed execution,
+  and online model serving remain unsupported.
+
 ## [0.3.0] - 2026-08-22
 
 ### Added
@@ -107,7 +154,9 @@ selection evidence; it does not fit a final deployment model or provide a nested
 - Python import package: `mlforge`
 - Console command: `mlforge`
 
-[Unreleased]: https://github.com/HivMindAI/mlforge/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/HivMindAI/mlforge/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/HivMindAI/mlforge/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/HivMindAI/mlforge/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/HivMindAI/mlforge/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/HivMindAI/mlforge/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/HivMindAI/mlforge/compare/v0.1.0...v0.2.0

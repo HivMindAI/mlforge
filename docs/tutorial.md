@@ -188,14 +188,20 @@ Use a shared deterministic stratified fold plan when one holdout is too fragile:
 mlforge benchmark examples/customer_churn.csv --target churn --metric balanced_accuracy --cross-validation-folds 3 --benchmarks-dir mlbenchmarks
 ```
 
+Regression uses deterministic shuffled K-folds and lower-is-better RMSE by default:
+
+```powershell
+mlforge benchmark examples/house_prices.csv --target price --task regression --cross-validation-folds 5 --benchmarks-dir mlbenchmarks
+```
+
 The bundled data supports three folds because its smallest target class has three rows. For every
 estimator, MLForge clones a fresh model and fits a new preprocessing pipeline on each fold's
 training rows. The fold's validation rows never contribute imputation values, scaling state,
 categories, or estimator parameters. Every source row becomes validation data exactly once.
 
 The leaderboard displays the primary metric as mean ± population standard deviation. Its strict
-manifest in `mlbenchmarks/cross-validation/` also records all fold values for every classification
-metric, exact partition fingerprints, warnings, timing, and any failed fold. Mean determines rank;
+manifest in `mlbenchmarks/cross-validation/` also records all fold values for every task metric,
+exact partition fingerprints, warnings, timing, and any failed fold. Mean determines rank;
 lower variability and then estimator name break exact mean ties deterministically.
 The aggregate is self-contained and no ordinary `mlruns/` records are produced in this mode;
 accordingly, `--runs-dir` is a holdout-only option and is rejected when folds are requested.
@@ -228,6 +234,10 @@ print(result.manifest.to_json())
 This result selects an estimator under the declared folds. It intentionally does not return a
 fitted pipeline. Because the same folds informed selection, do not describe the winning
 cross-validation mean as a nested-tuning or untouched final-test estimate.
+
+For regression in Python, set `task=TaskType.REGRESSION`, choose Ridge Regression and Random Forest
+Regressor, and set `primary_metric="root_mean_squared_error"`. The same finalization call below
+then fits the selected regressor on every verified row.
 
 ## 10. Explicitly fit the selected final model
 

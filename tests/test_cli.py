@@ -326,6 +326,47 @@ def test_cross_validation_benchmark_json_records_fold_aggregates(
     ).is_file()
 
 
+def test_regression_cross_validation_benchmark_uses_task_defaults(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The CLI should expose regression comparison without task-incompatible defaults."""
+    path = tmp_path / "regression.csv"
+    rows = ["feature,target", *(f"{index},{index * 2.5 + 4}" for index in range(30))]
+    path.write_text("\n".join(rows) + "\n", encoding="utf-8")
+    benchmarks_directory = tmp_path / "benchmarks"
+    monkeypatch.delenv(LOG_LEVEL_ENVIRONMENT_VARIABLE, raising=False)
+    monkeypatch.setattr("mlforge.cli.configure_logging", lambda level: None)
+
+    assert (
+        main(
+            [
+                "benchmark",
+                str(path),
+                "--target",
+                "target",
+                "--task",
+                "regression",
+                "--cross-validation-folds",
+                "3",
+                "--benchmarks-dir",
+                str(benchmarks_directory),
+                "--json",
+            ]
+        )
+        == 0
+    )
+
+    manifest = json.loads(capsys.readouterr().out)
+    assert manifest["configuration"]["task"] == "regression"
+    assert manifest["configuration"]["primary_metric"] == "root_mean_squared_error"
+    assert {entry["estimator"] for entry in manifest["entries"]} == {
+        "ridge-regression",
+        "random-forest-regressor",
+    }
+
+
 def test_cross_validation_benchmark_human_output_explains_selection_limit(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],

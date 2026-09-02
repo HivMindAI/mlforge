@@ -6,9 +6,10 @@ committed to the repository or included in distributions.
 ## Automated quality gate
 
 The default `python -m pytest` command measures the installed `mlforge` package, reports missing
-statements, and fails below 80% coverage. The threshold is intentionally below the v0.3.0
-preparation measurement of 83.68% so it prevents material regressions without encouraging tests
-that merely chase lines.
+statements, and fails below 80% coverage. The threshold prevents material regressions without
+encouraging tests that merely chase lines. The v0.5.0 candidate has 253 passing tests at 85.12%
+statement coverage and adds regression cross-validation, finalization, web-workspace migration,
+HTTP workflow, and browser coverage.
 
 GitHub Actions runs Ruff linting, Ruff formatting checks, strict mypy, pytest with the coverage
 floor, package builds, `pip check`, and the installed-wheel smoke workflow on this matrix:
@@ -20,6 +21,11 @@ floor, package builds, `pip check`, and the installed-wheel smoke workflow on th
 
 The release workflow independently rebuilds and validates distributions from the published tag
 before the protected PyPI deployment.
+
+The private-deployment CI job builds both containers, which runs frontend lint and the Next.js
+production build, starts the Compose profile, and waits for browser-facing readiness through the
+frontend-to-API proxy. The frontend Playwright job separately exercises complete classification
+and regression upload-to-prediction browser journeys against temporary application state.
 
 ## Real datasets
 

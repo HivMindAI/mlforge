@@ -348,8 +348,10 @@ regression, or random forest for classification, and ridge regression or random 
 regression. Invalid task/estimator combinations fail during configuration. Both split and
 estimator randomness use the recorded seed, and random forests use `n_jobs=1` for a stable local
 execution contract. MLForge does not yet expose arbitrary estimator parameters, tuning,
-regression cross-validation, or a plugin registry; the lower-level pipeline builder remains the
-extension point for compatible custom estimators.
+  hyperparameter tuning or a plugin registry; the lower-level pipeline builder remains the
+  extension point for compatible custom estimators. Cross-validation uses stratified folds for
+  classification and ordinary deterministic shuffled K-folds for regression so continuous targets
+  are never silently binned.
 
 `train` profiles and splits the validated dataset, constructs one preprocessing-and-estimator
 pipeline, fits it only on training rows, and predicts the held-out rows. Classification records

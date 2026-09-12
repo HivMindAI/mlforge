@@ -7,9 +7,9 @@ committed to the repository or included in distributions.
 
 The default `python -m pytest` command measures the installed `mlforge` package, reports missing
 statements, and fails below 80% coverage. The threshold prevents material regressions without
-encouraging tests that merely chase lines. The v0.5.0 candidate has 253 passing tests at 85.12%
-statement coverage and adds regression cross-validation, finalization, web-workspace migration,
-HTTP workflow, and browser coverage.
+encouraging tests that merely chase lines. The v0.6.0 candidate has 258 passing tests at 85.36%
+statement coverage and includes regression cross-validation, finalization, version-3 web-workspace
+migration, Settings and backup behavior, HTTP workflow, and browser coverage.
 
 GitHub Actions runs Ruff linting, Ruff formatting checks, strict mypy, pytest with the coverage
 floor, package builds, `pip check`, and the installed-wheel smoke workflow on this matrix:

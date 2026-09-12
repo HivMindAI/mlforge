@@ -5,14 +5,20 @@ from __future__ import annotations
 import asyncio
 import csv
 import os
+import platform
+import sqlite3
+import zipfile
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID, uuid4
 
+import pandas as pd
+import sklearn
 from fastapi import UploadFile
 
+from mlforge import __version__
 from mlforge.artifacts import (
     ARTIFACT_SUFFIX,
     ArtifactManifest,
@@ -60,11 +66,15 @@ from mlforge.web.errors import (
     PredictionExecutionError,
     PredictionInputValidationError,
     PredictionResultUnavailableError,
+    SettingsValidationError,
     UploadValidationError,
     WebStorageError,
 )
 from mlforge.web.settings import WebSettings
 from mlforge.web.storage import (
+    WEB_SCHEMA_VERSION,
+    ApplicationSettingsRecord,
+    ApplicationSettingsStore,
     DatasetRecord,
     DatasetStore,
     ExperimentRecord,
@@ -76,6 +86,7 @@ from mlforge.web.storage import (
     JobStore,
     PredictionStore,
     WebPredictionRecord,
+    WorkspaceCounts,
 )
 
 _UPLOAD_CHUNK_BYTES = 1024 * 1024
@@ -182,6 +193,187 @@ class DatasetService:
         return DatasetAnalysis(record=record, profile=profile_dataset(dataset))
 
 
+@dataclass(frozen=True, slots=True)
+class SystemInformation:
+    """Path-free runtime versions useful for local diagnostics."""
+
+    mlforge_version: str
+    python_version: str
+    pandas_version: str
+    scikit_learn_version: str
+    web_schema_version: int
+
+
+@dataclass(frozen=True, slots=True)
+class WorkspaceInformation:
+    """Bounded storage facts safe to show to the trusted local operator."""
+
+    name: str
+    usage_bytes: int
+    max_upload_bytes: int
+    counts: WorkspaceCounts
+
+
+@dataclass(frozen=True, slots=True)
+class SettingsDetails:
+    """Complete Settings screen contract assembled from persisted and runtime state."""
+
+    preferences: ApplicationSettingsRecord
+    system: SystemInformation
+    workspace: WorkspaceInformation
+
+
+@dataclass(frozen=True, slots=True)
+class BackupArtifact:
+    """One newly created, create-only workspace archive."""
+
+    path: Path
+    filename: str
+
+
+class ApplicationSettingsService:
+    """Validate operator defaults, report diagnostics, and create safe local backups."""
+
+    def __init__(
+        self,
+        store: ApplicationSettingsStore,
+        dataset_store: DatasetStore,
+        settings: WebSettings,
+    ) -> None:
+        self.store = store
+        self.dataset_store = dataset_store
+        self.settings = settings
+
+    def get(self) -> SettingsDetails:
+        """Return preferences plus a fresh read-only runtime and workspace summary."""
+        self.dataset_store.check_ready()
+        preferences = self._validated_preferences(self.store.get())
+        return SettingsDetails(
+            preferences=preferences,
+            system=SystemInformation(
+                mlforge_version=__version__,
+                python_version=platform.python_version(),
+                pandas_version=pd.__version__,
+                scikit_learn_version=sklearn.__version__,
+                web_schema_version=WEB_SCHEMA_VERSION,
+            ),
+            workspace=WorkspaceInformation(
+                name=self.settings.workspace.expanduser().resolve().name,
+                usage_bytes=self._workspace_usage_bytes(),
+                max_upload_bytes=self.settings.max_upload_bytes,
+                counts=self.store.counts(),
+            ),
+        )
+
+    def update(
+        self,
+        *,
+        default_fold_count: int,
+        classification_metric: str,
+        regression_metric: str,
+        classification_estimators: tuple[str, ...],
+        regression_estimators: tuple[str, ...],
+    ) -> SettingsDetails:
+        """Save validated defaults that will apply only to future experiments."""
+        try:
+            split = CrossValidationSplitConfig(fold_count=default_fold_count)
+            classification = CrossValidationConfig(
+                task=TaskType.CLASSIFICATION,
+                estimators=classification_estimators,
+                primary_metric=classification_metric,
+                split=split,
+            )
+            regression = CrossValidationConfig(
+                task=TaskType.REGRESSION,
+                estimators=regression_estimators,
+                primary_metric=regression_metric,
+                split=split,
+            )
+        except ConfigurationError as error:
+            raise SettingsValidationError(str(error)) from error
+
+        self.store.update(
+            ApplicationSettingsRecord(
+                default_fold_count=split.fold_count,
+                classification_metric=classification.primary_metric,
+                regression_metric=regression.primary_metric,
+                classification_estimators=classification.estimators,
+                regression_estimators=regression.estimators,
+                updated_at=datetime.now(UTC),
+            )
+        )
+        return self.get()
+
+    def create_backup(self) -> BackupArtifact:
+        """Create a ZIP with a consistent database snapshot and durable workspace files."""
+        workspace = self.settings.workspace.expanduser().resolve()
+        backup_directory = workspace / "backups"
+        backup_id = uuid4()
+        timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+        filename = f"mlforge-backup-{timestamp}-{backup_id}.zip"
+        final_path = backup_directory / filename
+        temporary_archive = backup_directory / f".{backup_id}.zip"
+        temporary_database = backup_directory / f".{backup_id}.sqlite3"
+        try:
+            backup_directory.mkdir(parents=True, exist_ok=True)
+            with (
+                sqlite3.connect(workspace / "mlforge.sqlite3", timeout=10) as source,
+                sqlite3.connect(temporary_database) as destination,
+            ):
+                source.backup(destination)
+            with zipfile.ZipFile(
+                temporary_archive,
+                mode="x",
+                compression=zipfile.ZIP_DEFLATED,
+            ) as archive:
+                archive.write(temporary_database, "mlforge.sqlite3")
+                for path in sorted(workspace.rglob("*")):
+                    relative = path.relative_to(workspace)
+                    if relative.parts[0] == "backups" or relative == Path("mlforge.sqlite3"):
+                        continue
+                    if path.is_symlink() or not path.is_file() or path.name.startswith("."):
+                        continue
+                    archive.write(path, relative.as_posix())
+            os.replace(temporary_archive, final_path)
+            return BackupArtifact(path=final_path, filename=filename)
+        except (OSError, sqlite3.Error, zipfile.BadZipFile) as error:
+            raise WebStorageError("Could not create a workspace backup.") from error
+        finally:
+            _unlink_if_present(temporary_database)
+            _unlink_if_present(temporary_archive)
+
+    def _workspace_usage_bytes(self) -> int:
+        workspace = self.settings.workspace.expanduser().resolve()
+        try:
+            return sum(
+                path.stat().st_size
+                for path in workspace.rglob("*")
+                if path.is_file() and not path.is_symlink()
+            )
+        except OSError as error:
+            raise WebStorageError("Could not inspect local workspace usage.") from error
+
+    @staticmethod
+    def _validated_preferences(record: ApplicationSettingsRecord) -> ApplicationSettingsRecord:
+        try:
+            split = CrossValidationSplitConfig(fold_count=record.default_fold_count)
+            CrossValidationConfig(
+                task=TaskType.CLASSIFICATION,
+                estimators=record.classification_estimators,
+                primary_metric=record.classification_metric,
+                split=split,
+            )
+            CrossValidationConfig(
+                task=TaskType.REGRESSION,
+                estimators=record.regression_estimators,
+                primary_metric=record.regression_metric,
+                split=split,
+            )
+        except ConfigurationError as error:
+            raise WebStorageError("Stored application settings are invalid.") from error
+        return record
+
+
 class ExperimentService:
     """Validate and persist comparison configuration without starting training."""
 
@@ -190,11 +382,13 @@ class ExperimentService:
         dataset_store: DatasetStore,
         experiment_store: ExperimentStore,
         job_store: JobStore,
+        application_settings_store: ApplicationSettingsStore,
         settings: WebSettings,
     ) -> None:
         self.dataset_store = dataset_store
         self.experiment_store = experiment_store
         self.job_store = job_store
+        self.application_settings_store = application_settings_store
         self.settings = settings
 
     def get(self, experiment_id: UUID) -> ExperimentRecord:
@@ -237,8 +431,11 @@ class ExperimentService:
                 f"MLForge detected the selected target as {detected}."
             )
         task = TaskType(profile.target.task_hint.value)
+        application_settings = self.application_settings_store.get()
         primary_metric = (
-            "balanced_accuracy" if task is TaskType.CLASSIFICATION else "root_mean_squared_error"
+            application_settings.classification_metric
+            if task is TaskType.CLASSIFICATION
+            else application_settings.regression_metric
         )
 
         try:

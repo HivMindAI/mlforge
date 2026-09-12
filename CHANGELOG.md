@@ -7,6 +7,22 @@ All notable MLForge changes are recorded here. The project follows semantic vers
 
 No changes yet.
 
+## [0.6.0] - 2026-09-12
+
+### Added
+
+- Add a real Settings screen with system/light/dark appearance, persisted cross-validation and
+  estimator defaults for future experiments, workspace counts and usage, runtime versions, and
+  local service diagnostics.
+- Add create-only workspace backup downloads containing a consistent SQLite snapshot and durable
+  datasets, evidence, artifacts, and prediction files while excluding prior backup archives.
+
+### Compatibility
+
+- Upgrade the SQLite web workspace to schema version 3 with an additive migration from the v0.5.0
+  version-2 schema. Existing datasets, experiments, jobs, finalizations, predictions, and immutable
+  ML evidence remain unchanged.
+
 ## [0.5.0] - 2026-09-02
 
 ### Added
@@ -154,7 +170,8 @@ selection evidence; it does not fit a final deployment model or provide a nested
 - Python import package: `mlforge`
 - Console command: `mlforge`
 
-[Unreleased]: https://github.com/HivMindAI/mlforge/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/HivMindAI/mlforge/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/HivMindAI/mlforge/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/HivMindAI/mlforge/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/HivMindAI/mlforge/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/HivMindAI/mlforge/compare/v0.2.1...v0.3.0

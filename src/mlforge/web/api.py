@@ -25,8 +25,11 @@ from mlforge.web.schemas import (
     JobResponse,
     PredictionCreatedResponse,
     PredictionResponse,
+    SettingsResponse,
+    SettingsUpdateRequest,
 )
 from mlforge.web.services import (
+    ApplicationSettingsService,
     DatasetService,
     ExperimentResultService,
     ExperimentService,
@@ -39,6 +42,7 @@ experiment_router = APIRouter(prefix="/experiments", tags=["experiments"])
 job_router = APIRouter(prefix="/jobs", tags=["jobs"])
 final_model_router = APIRouter(prefix="/final-models", tags=["final-models"])
 prediction_router = APIRouter(prefix="/predictions", tags=["predictions"])
+settings_router = APIRouter(prefix="/settings", tags=["settings"])
 
 
 def get_dataset_service(request: Request) -> DatasetService:
@@ -90,6 +94,67 @@ def get_job_manager(request: Request) -> JobManager:
 
 
 JobManagerDependency = Annotated[JobManager, Depends(get_job_manager)]
+
+
+def get_application_settings_service(request: Request) -> ApplicationSettingsService:
+    """Resolve settings, diagnostics, and backup behavior from application state."""
+    return cast(ApplicationSettingsService, request.app.state.application_settings_service)
+
+
+ApplicationSettingsServiceDependency = Annotated[
+    ApplicationSettingsService,
+    Depends(get_application_settings_service),
+]
+
+
+@settings_router.get("", response_model=SettingsResponse)
+def get_application_settings(
+    service: ApplicationSettingsServiceDependency,
+) -> SettingsResponse:
+    """Return persisted defaults and fresh read-only local diagnostics."""
+    return SettingsResponse.from_details(service.get())
+
+
+@settings_router.put(
+    "",
+    response_model=SettingsResponse,
+    responses={422: {"model": ErrorResponse}},
+)
+def update_application_settings(
+    request: SettingsUpdateRequest,
+    service: ApplicationSettingsServiceDependency,
+) -> SettingsResponse:
+    """Replace defaults for future experiments without mutating existing evidence."""
+    return SettingsResponse.from_details(
+        service.update(
+            default_fold_count=request.default_fold_count,
+            classification_metric=request.classification_metric,
+            regression_metric=request.regression_metric,
+            classification_estimators=request.classification_estimators,
+            regression_estimators=request.regression_estimators,
+        )
+    )
+
+
+@settings_router.post(
+    "/backup",
+    response_class=FileResponse,
+    responses={500: {"model": ErrorResponse}},
+)
+def create_workspace_backup(
+    service: ApplicationSettingsServiceDependency,
+) -> FileResponse:
+    """Create and download one create-only local workspace archive."""
+    backup = service.create_backup()
+    return FileResponse(
+        backup.path,
+        media_type="application/zip",
+        filename=backup.filename,
+        headers={
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @router.post(

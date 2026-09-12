@@ -17,9 +17,21 @@ type RootLayoutProps = Readonly<{
   children: ReactNode;
 }>;
 
+const themeInitialization = `
+try {
+  const saved = localStorage.getItem("mlforge-theme");
+  document.documentElement.dataset.theme = saved === "light" || saved === "dark" ? saved : "system";
+} catch {
+  document.documentElement.dataset.theme = "system";
+}
+`;
+
 export default function RootLayout({ children }: RootLayoutProps) {
   return (
-    <html lang="en">
+    <html lang="en" data-theme="system" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeInitialization }} />
+      </head>
       <body>
         <AppShell>{children}</AppShell>
       </body>

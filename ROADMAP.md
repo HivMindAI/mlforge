@@ -10,7 +10,8 @@ owner accepts the current one with `DONE`.
 - **Important:** Milestones 5-6 make artifacts usable and prepare a responsible public release.
 - **Feature-complete local product:** Milestones 7-8.1 complete the Python workflow in v0.3.0;
   Milestone 8.2 packages that workflow for one local web operator in v0.4.0, and Milestone 8.3
-  brings regression parity in v0.5.0.
+  brings regression parity in v0.5.0. Milestone 8.4 completes bounded local settings and workspace
+  management in v0.6.0.
 - **Conditional platform work:** Shared-service portions of Milestones 9-10 remain postponed
   proposals, not active development commitments.
 
@@ -321,13 +322,39 @@ golden paths.
 target selection through fair comparison, immutable selection evidence, final fitting, and
 schema-validated predictions in Python, CLI, and the local web product.
 
-## Project state for v0.5.0
+### Milestone 8.4 - Settings and workspace management
 
-**Status:** Single-user release candidate.
+**Status:** Accepted by the project owner on 2026-09-12; complete for v0.6.0.
+
+**What changes:** Replace the disabled Settings placeholder with a real local-operator screen.
+Persist validated fold, ranking-metric, and estimator defaults for future experiment forms; keep
+existing experiment evidence immutable; add browser-local system/light/dark appearance; report
+path-safe workspace counts, usage, runtime versions, and service readiness; and provide a
+create-only ZIP backup with a consistent SQLite snapshot and durable workspace files.
+
+**Why:** The completed ML workflow still requires editing environment variables or inspecting the
+filesystem for basic operational context. A bounded Settings surface makes the single-user product
+easier to operate without introducing accounts, shared state, or unsafe live reconfiguration.
+
+**Dependencies:** Milestone 8.3 and the existing versioned local web workspace.
+
+**Testing:** Version-2-to-version-3 SQLite migration, settings validation and persistence, immutable
+existing experiment behavior, metric-default integration, path-safe diagnostics, backup content,
+frontend lint/build, and a browser path covering theme persistence, saved defaults, and download.
+
+**Done means:** One trusted local operator can configure future experiment defaults, inspect the
+running workspace, change browser appearance, and download a restorable backup. Workspace location
+and upload limits remain read-only process configuration, and no destructive reset or shared-user
+behavior is introduced.
+
+## Project state for v0.6.0
+
+**Status:** Feature-complete local product in maintenance mode.
 
 v0.3.0 established the local Python core, v0.4.0 added the repository- and
-source-archive-distributed web interface and private deployment profile, and v0.5.0 brings
-classification/regression parity to comparison, finalization, and prediction.
+source-archive-distributed web interface and private deployment profile, v0.5.0 brought
+classification/regression parity to comparison, finalization, and prediction, and v0.6.0 adds
+accepted settings, runtime diagnostics, and restorable workspace backups.
 The API, SQLite database, worker, uploaded files, model evidence, artifacts, and prediction outputs
 still belong to one local workspace and one active MLForge process.
 
@@ -339,7 +366,7 @@ online model serving, or a model-registry server.
 
 ### Milestone 9 - Service adapters and shared experiment storage
 
-**Status:** Postponed / conditional for shared and multi-user infrastructure. The v0.5.0 local API
+**Status:** Postponed / conditional for shared and multi-user infrastructure. The v0.6.0 local API
 does not activate this milestone.
 
 **What changes:** Only if multi-user or remote execution is a demonstrated requirement, introduce a

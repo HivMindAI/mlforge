@@ -131,7 +131,39 @@ CREATE TABLE IF NOT EXISTS predictions (
 )
 """
 
-WEB_SCHEMA_VERSION = 2
+_APPLICATION_SETTINGS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS application_settings (
+    singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+    default_fold_count INTEGER NOT NULL CHECK (default_fold_count BETWEEN 2 AND 10),
+    classification_metric TEXT NOT NULL,
+    regression_metric TEXT NOT NULL,
+    classification_estimators_json TEXT NOT NULL,
+    regression_estimators_json TEXT NOT NULL,
+    updated_at TEXT
+)
+"""
+
+_DEFAULT_APPLICATION_SETTINGS = """
+INSERT OR IGNORE INTO application_settings (
+    singleton,
+    default_fold_count,
+    classification_metric,
+    regression_metric,
+    classification_estimators_json,
+    regression_estimators_json,
+    updated_at
+) VALUES (
+    1,
+    5,
+    'balanced_accuracy',
+    'root_mean_squared_error',
+    '["dummy-classifier", "logistic-regression", "random-forest-classifier"]',
+    '["ridge-regression", "random-forest-regressor"]',
+    NULL
+)
+"""
+
+WEB_SCHEMA_VERSION = 3
 
 _WEB_SCHEMA_STATEMENTS = (
     _DATASET_SCHEMA,
@@ -143,9 +175,10 @@ _WEB_SCHEMA_STATEMENTS = (
     _FINALIZATION_ACTIVE_INDEX,
     _FINALIZATION_COMPLETE_INDEX,
     _PREDICTION_SCHEMA,
+    _APPLICATION_SETTINGS_SCHEMA,
 )
 
-_EXPECTED_TABLE_COLUMNS = {
+_LEGACY_TABLE_COLUMNS = {
     "datasets": (
         "dataset_id",
         "original_filename",
@@ -202,6 +235,19 @@ _EXPECTED_TABLE_COLUMNS = {
     ),
 }
 
+_EXPECTED_TABLE_COLUMNS = {
+    **_LEGACY_TABLE_COLUMNS,
+    "application_settings": (
+        "singleton",
+        "default_fold_count",
+        "classification_metric",
+        "regression_metric",
+        "classification_estimators_json",
+        "regression_estimators_json",
+        "updated_at",
+    ),
+}
+
 
 def initialize_web_schema(workspace: Path) -> None:
     """Create or adopt the complete versioned web schema transactionally."""
@@ -224,12 +270,17 @@ def initialize_web_schema(workspace: Path) -> None:
                 had_experiments = _table_exists(connection, "experiments")
                 for statement in _WEB_SCHEMA_STATEMENTS:
                     connection.execute(statement)
-                _validate_web_schema(connection)
                 if had_experiments:
+                    _validate_web_schema(connection, expected=_LEGACY_TABLE_COLUMNS)
                     _migrate_experiments_to_v2(connection)
             elif current_version == 1:
-                _validate_web_schema(connection)
+                _validate_web_schema(connection, expected=_LEGACY_TABLE_COLUMNS)
                 _migrate_experiments_to_v2(connection)
+                connection.execute(_APPLICATION_SETTINGS_SCHEMA)
+            elif current_version == 2:
+                _validate_web_schema(connection, expected=_LEGACY_TABLE_COLUMNS)
+                connection.execute(_APPLICATION_SETTINGS_SCHEMA)
+            connection.execute(_DEFAULT_APPLICATION_SETTINGS)
             _validate_web_schema(connection)
             connection.execute(f"PRAGMA user_version = {WEB_SCHEMA_VERSION}")
             connection.execute("PRAGMA optimize")
@@ -239,9 +290,13 @@ def initialize_web_schema(workspace: Path) -> None:
         raise WebStorageError("Could not initialize the versioned web metadata schema.") from error
 
 
-def _validate_web_schema(connection: sqlite3.Connection) -> None:
+def _validate_web_schema(
+    connection: sqlite3.Connection,
+    *,
+    expected: dict[str, tuple[str, ...]] = _EXPECTED_TABLE_COLUMNS,
+) -> None:
     """Reject unversioned or restored databases whose table shapes are incompatible."""
-    for table, expected_columns in _EXPECTED_TABLE_COLUMNS.items():
+    for table, expected_columns in expected.items():
         rows = connection.execute(f'PRAGMA table_info("{table}")').fetchall()
         actual_columns = tuple(cast(str, row[1]) for row in rows)
         if actual_columns != expected_columns:
@@ -373,6 +428,157 @@ class WebPredictionRecord:
     status: Literal["complete"]
     created_at: datetime
     completed_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class ApplicationSettingsRecord:
+    """Validated operator defaults used only for future experiment configurations."""
+
+    default_fold_count: int
+    classification_metric: str
+    regression_metric: str
+    classification_estimators: tuple[str, ...]
+    regression_estimators: tuple[str, ...]
+    updated_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class WorkspaceCounts:
+    """Small metadata-only summary for the local operator workspace."""
+
+    datasets: int
+    experiments: int
+    final_models: int
+    predictions: int
+
+
+class ApplicationSettingsStore:
+    """Persist one row of mutable defaults without changing prior experiment evidence."""
+
+    def __init__(self, workspace: Path) -> None:
+        self.workspace = workspace.expanduser().resolve()
+        self.database_path = self.workspace / "mlforge.sqlite3"
+
+    def initialize(self) -> None:
+        """Create or migrate the shared database and seed safe defaults."""
+        initialize_web_schema(self.workspace)
+
+    def get(self) -> ApplicationSettingsRecord:
+        """Read the single settings row."""
+        try:
+            with closing(self._connect()) as connection:
+                row = connection.execute(
+                    """
+                    SELECT
+                        default_fold_count,
+                        classification_metric,
+                        regression_metric,
+                        classification_estimators_json,
+                        regression_estimators_json,
+                        updated_at
+                    FROM application_settings
+                    WHERE singleton = 1
+                    """
+                ).fetchone()
+        except sqlite3.Error as error:
+            raise WebStorageError("Could not read application settings.") from error
+        if row is None:
+            raise WebStorageError("Application settings are unavailable.")
+        return self._record_from_row(row)
+
+    def update(self, record: ApplicationSettingsRecord) -> ApplicationSettingsRecord:
+        """Replace future experiment defaults atomically."""
+        try:
+            with closing(self._connect()) as connection:
+                cursor = connection.execute(
+                    """
+                    UPDATE application_settings
+                    SET
+                        default_fold_count = ?,
+                        classification_metric = ?,
+                        regression_metric = ?,
+                        classification_estimators_json = ?,
+                        regression_estimators_json = ?,
+                        updated_at = ?
+                    WHERE singleton = 1
+                    """,
+                    (
+                        record.default_fold_count,
+                        record.classification_metric,
+                        record.regression_metric,
+                        json.dumps(record.classification_estimators),
+                        json.dumps(record.regression_estimators),
+                        record.updated_at.isoformat() if record.updated_at is not None else None,
+                    ),
+                )
+                connection.commit()
+        except sqlite3.Error as error:
+            raise WebStorageError("Could not save application settings.") from error
+        if cursor.rowcount != 1:
+            raise WebStorageError("Application settings are unavailable.")
+        return self.get()
+
+    def counts(self) -> WorkspaceCounts:
+        """Count durable records without loading their contents or model payloads."""
+        try:
+            with closing(self._connect()) as connection:
+                row = connection.execute(
+                    """
+                    SELECT
+                        (SELECT COUNT(*) FROM datasets) AS datasets,
+                        (SELECT COUNT(*) FROM experiments) AS experiments,
+                        (
+                            SELECT COUNT(*)
+                            FROM finalizations
+                            WHERE status = 'complete'
+                        ) AS final_models,
+                        (SELECT COUNT(*) FROM predictions) AS predictions
+                    """
+                ).fetchone()
+        except sqlite3.Error as error:
+            raise WebStorageError("Could not summarize the local workspace.") from error
+        if row is None:
+            raise WebStorageError("The local workspace summary is unavailable.")
+        return WorkspaceCounts(
+            datasets=cast(int, row["datasets"]),
+            experiments=cast(int, row["experiments"]),
+            final_models=cast(int, row["final_models"]),
+            predictions=cast(int, row["predictions"]),
+        )
+
+    def _connect(self) -> sqlite3.Connection:
+        connection = sqlite3.connect(self.database_path, timeout=10)
+        connection.row_factory = sqlite3.Row
+        return connection
+
+    @staticmethod
+    def _record_from_row(row: sqlite3.Row) -> ApplicationSettingsRecord:
+        try:
+            classification_estimators = json.loads(cast(str, row["classification_estimators_json"]))
+            regression_estimators = json.loads(cast(str, row["regression_estimators_json"]))
+            if not isinstance(classification_estimators, list) or not all(
+                isinstance(item, str) and item for item in classification_estimators
+            ):
+                raise ValueError("Invalid classification estimator defaults")
+            if not isinstance(regression_estimators, list) or not all(
+                isinstance(item, str) and item for item in regression_estimators
+            ):
+                raise ValueError("Invalid regression estimator defaults")
+            raw_updated_at = row["updated_at"]
+            if raw_updated_at is not None and not isinstance(raw_updated_at, str):
+                raise ValueError("Invalid settings timestamp")
+            return ApplicationSettingsRecord(
+                default_fold_count=cast(int, row["default_fold_count"]),
+                classification_metric=cast(str, row["classification_metric"]),
+                regression_metric=cast(str, row["regression_metric"]),
+                classification_estimators=tuple(classification_estimators),
+                regression_estimators=tuple(regression_estimators),
+                updated_at=(
+                    datetime.fromisoformat(raw_updated_at) if raw_updated_at is not None else None
+                ),
+            )
+        except (KeyError, TypeError, ValueError) as error:
+            raise WebStorageError("Stored application settings are invalid.") from error
 
 
 class DatasetStore:

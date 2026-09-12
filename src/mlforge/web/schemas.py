@@ -31,6 +31,7 @@ from mlforge.web.services import (
     ExperimentHistoryEntry,
     PredictionDetails,
     PredictionPreviewRow,
+    SettingsDetails,
 )
 from mlforge.web.storage import (
     DatasetRecord,
@@ -49,6 +50,122 @@ class HealthResponse(BaseModel):
 
     status: Literal["ok"] = "ok"
     version: str
+
+
+class SettingsUpdateRequest(BaseModel):
+    """Complete replacement for defaults used by future experiment forms."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    default_fold_count: int
+    classification_metric: str
+    regression_metric: str
+    classification_estimators: tuple[str, ...]
+    regression_estimators: tuple[str, ...]
+
+
+class SettingsPreferencesResponse(BaseModel):
+    """Persisted defaults; existing experiment records are never rewritten."""
+
+    model_config = ConfigDict(frozen=True)
+
+    default_fold_count: int
+    classification_metric: str
+    regression_metric: str
+    classification_estimators: tuple[str, ...]
+    regression_estimators: tuple[str, ...]
+    updated_at: datetime | None
+
+
+class SettingsSystemResponse(BaseModel):
+    """Runtime versions relevant to reproducibility and support."""
+
+    model_config = ConfigDict(frozen=True)
+
+    mlforge_version: str
+    python_version: str
+    pandas_version: str
+    scikit_learn_version: str
+    web_schema_version: int
+
+
+class SettingsCountsResponse(BaseModel):
+    """Counts of durable workspace records."""
+
+    model_config = ConfigDict(frozen=True)
+
+    datasets: int
+    experiments: int
+    final_models: int
+    predictions: int
+
+
+class SettingsWorkspaceResponse(BaseModel):
+    """Read-only process configuration and storage summary."""
+
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+    usage_bytes: int
+    max_upload_bytes: int
+    workspace_environment_variable: Literal["MLFORGE_WEB_WORKSPACE"] = "MLFORGE_WEB_WORKSPACE"
+    upload_limit_environment_variable: Literal["MLFORGE_WEB_MAX_UPLOAD_BYTES"] = (
+        "MLFORGE_WEB_MAX_UPLOAD_BYTES"
+    )
+    restart_required: bool = True
+    counts: SettingsCountsResponse
+
+
+class SettingsDiagnosticsResponse(BaseModel):
+    """Current health of the single-process local application."""
+
+    model_config = ConfigDict(frozen=True)
+
+    api: Literal["ready"] = "ready"
+    database: Literal["ready"] = "ready"
+    worker: Literal["available"] = "available"
+
+
+class SettingsResponse(BaseModel):
+    """Complete Settings screen response."""
+
+    model_config = ConfigDict(frozen=True)
+
+    preferences: SettingsPreferencesResponse
+    system: SettingsSystemResponse
+    workspace: SettingsWorkspaceResponse
+    diagnostics: SettingsDiagnosticsResponse = SettingsDiagnosticsResponse()
+
+    @classmethod
+    def from_details(cls, details: SettingsDetails) -> SettingsResponse:
+        return cls(
+            preferences=SettingsPreferencesResponse(
+                default_fold_count=details.preferences.default_fold_count,
+                classification_metric=details.preferences.classification_metric,
+                regression_metric=details.preferences.regression_metric,
+                classification_estimators=details.preferences.classification_estimators,
+                regression_estimators=details.preferences.regression_estimators,
+                updated_at=details.preferences.updated_at,
+            ),
+            system=SettingsSystemResponse(
+                mlforge_version=details.system.mlforge_version,
+                python_version=details.system.python_version,
+                pandas_version=details.system.pandas_version,
+                scikit_learn_version=details.system.scikit_learn_version,
+                web_schema_version=details.system.web_schema_version,
+            ),
+            workspace=SettingsWorkspaceResponse(
+                name=details.workspace.name,
+                usage_bytes=details.workspace.usage_bytes,
+                max_upload_bytes=details.workspace.max_upload_bytes,
+                counts=SettingsCountsResponse(
+                    datasets=details.workspace.counts.datasets,
+                    experiments=details.workspace.counts.experiments,
+                    final_models=details.workspace.counts.final_models,
+                    predictions=details.workspace.counts.predictions,
+                ),
+            ),
+        )
 
 
 class DatasetTargetRequest(BaseModel):

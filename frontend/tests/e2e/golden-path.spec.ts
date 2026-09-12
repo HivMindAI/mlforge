@@ -3,6 +3,30 @@ import path from "node:path";
 
 import { expect, test } from "@playwright/test";
 
+test("saves local settings, persists theme, and downloads a backup", async ({ page }) => {
+  await page.goto("/settings");
+  await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+  await expect(page.getByText("API ready", { exact: true })).toBeVisible();
+  await expect(page.getByText("Database ready", { exact: true })).toBeVisible();
+
+  await page.getByLabel("Appearance").selectOption("dark");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.reload();
+  await expect(page.getByLabel("Appearance")).toHaveValue("dark");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+
+  await page.getByLabel("Cross-validation folds").selectOption("4");
+  await page.getByLabel("Classification ranking metric").selectOption("f1_macro");
+  await page.getByRole("button", { name: "Save defaults" }).click();
+  await expect(page.getByText("Defaults saved. Existing experiments were not changed.")).toBeVisible();
+
+  const backupPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download backup" }).click();
+  const backup = await backupPromise;
+  expect(backup.suggestedFilename()).toMatch(/^mlforge-backup-.*\.zip$/);
+  await expect(page.getByText("Backup created and downloaded.")).toBeVisible();
+});
+
 test("completes upload, comparison, finalization, and prediction", async ({ page }) => {
   const trainingCsv = path.resolve(process.cwd(), "..", "examples", "customer_churn.csv");
   const predictionCsv = path.resolve(

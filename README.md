@@ -263,6 +263,9 @@ The interface uses a responsive modal navigation on smaller screens, visible key
 scrollable table regions, associated form guidance, and text-based status labels. Important routes
 distinguish restrained loading, true empty, retryable server-error, validation-error, success, and
 partial-result states; the dashboard reflects persisted experiment history rather than sample data.
+The Settings screen provides browser-local appearance, validated defaults for future comparison
+forms, workspace counts and usage, runtime diagnostics, and a create-only backup download. Runtime
+workspace and upload-limit controls remain environment-backed and require an API restart.
 Install its optional adapter and start the API from the repository root:
 
 ```bash
@@ -300,7 +303,7 @@ backup, upgrade, rollback, and security boundaries.
 
 ## Validation evidence
 
-The v0.5.0 release candidate has 253 passing behavioral tests at 85.12% statement coverage,
+The v0.6.0 release candidate has 258 passing behavioral tests at 85.36% statement coverage,
 including regression comparison, finalization, and web prediction coverage. It enforces a
 conservative 80% floor. CI covers Ubuntu on Python
 3.11/3.12 and Windows on Python 3.12, with Ruff, formatting, strict mypy, pytest, package builds,
@@ -368,9 +371,10 @@ mlforge/
 
 ## Project status and current limits
 
-**MLForge v0.5.0 combines the feature-complete local Python core with a supported single-user web
-workflow and private deployment profile.** The web adapter reuses the core ML algorithms and
-evidence model rather than implementing a second training system.
+**MLForge v0.6.0 combines the feature-complete local Python core with a supported single-user web
+workflow, bounded operator settings, workspace backup, and a private deployment profile.** The web
+adapter reuses the core ML algorithms and evidence model rather than implementing a second training
+system.
 
 MLForge currently supports local, single-process tabular classification/regression. Cross-validation
 and selection-driven final fitting support both tasks. The web application has a local HTTP

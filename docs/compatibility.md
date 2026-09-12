@@ -20,13 +20,15 @@ Starting with `1.0.0`:
 
 Published release contents are immutable. A fix always receives a new version.
 
-## Supported product after v0.5.0
+## Supported product after v0.6.0
 
 v0.3.0 is the feature-complete release of the local Python workflow. v0.4.0 adds a supported local
 FastAPI adapter, Next.js interface, versioned SQLite workspace, and private two-container profile
 for one trusted operator. v0.5.0 extends cross-validation selection, final fitting, and the web
 journey to regression. The frontend and deployment sources are shipped in the source archive and
-repository; they are not installed into Python site-packages by the wheel.
+repository; they are not installed into Python site-packages by the wheel. v0.6.0 adds persisted
+defaults for future experiments, browser-local appearance, path-safe workspace diagnostics, and
+create-only restorable workspace backups without changing the single-user boundary.
 
 Shared-service, multi-user, authenticated public hosting, and distributed execution remain
 conditional roadmap work. The single-user product should otherwise receive focused bug, security,
@@ -99,9 +101,11 @@ time. MLForge does not promise cross-version pickle compatibility. See [artifact
 The SQLite web workspace records its schema with `PRAGMA user_version`. Version 1 represents the
 classification-only experiment constraint introduced by the first single-user web release.
 Version 2 transactionally broadens experiments to classification or regression while preserving
-dependent jobs, finalizations, and predictions. Existing unversioned workspaces are adopted only
-after the complete table shape and foreign-key graph validate. A workspace from a newer unsupported
-schema fails closed instead of being guessed or silently rewritten.
+dependent jobs, finalizations, and predictions. Version 3 adds the singleton application-settings
+record while preserving all existing data and immutable ML evidence. Existing unversioned
+workspaces are adopted only after the complete table shape and foreign-key graph validate. A
+workspace from a newer unsupported schema fails closed instead of being guessed or silently
+rewritten.
 
 Back up the complete workspace before upgrading. The database is not sufficient by itself because
 its rows refer to uploaded CSVs, immutable benchmark evidence, artifacts, and prediction files in

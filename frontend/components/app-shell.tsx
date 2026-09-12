@@ -47,9 +47,14 @@ function Navigation({ onNavigate }: NavigationProps) {
 
       <ul className="navigation-list navigation-secondary">
         <li>
-          <span className="navigation-item" aria-disabled="true">
-            Settings<span className="visually-hidden"> (not available)</span>
-          </span>
+          <Link
+            className="navigation-item"
+            href="/settings"
+            aria-current={pathname.startsWith("/settings") ? "page" : undefined}
+            onClick={onNavigate}
+          >
+            Settings
+          </Link>
         </li>
       </ul>
     </nav>
@@ -136,7 +141,7 @@ export function AppShell({ children }: AppShellProps) {
           <Navigation />
           <div className="sidebar-meta" aria-label="Application version">
             <span>Local workspace</span>
-            <span>Core 0.5.0</span>
+            <span>Core 0.6.0</span>
           </div>
         </aside>
 

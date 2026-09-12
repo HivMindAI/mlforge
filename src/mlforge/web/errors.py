@@ -61,5 +61,9 @@ class ExperimentValidationError(WebError):
     """Raised when a comparison configuration is unsupported or invalid."""
 
 
+class SettingsValidationError(WebError):
+    """Raised when mutable application defaults are unsupported or unsafe."""
+
+
 class WebStorageError(WebError):
     """Raised when local web metadata or upload storage is unavailable."""

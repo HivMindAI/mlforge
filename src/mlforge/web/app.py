@@ -18,6 +18,7 @@ from mlforge.web.api import (
     job_router,
     prediction_router,
     router,
+    settings_router,
 )
 from mlforge.web.errors import (
     DatasetNotFoundError,
@@ -33,12 +34,14 @@ from mlforge.web.errors import (
     PredictionInputValidationError,
     PredictionNotFoundError,
     PredictionResultUnavailableError,
+    SettingsValidationError,
     UploadValidationError,
     WebStorageError,
 )
 from mlforge.web.jobs import JobManager
 from mlforge.web.schemas import ErrorResponse, HealthResponse
 from mlforge.web.services import (
+    ApplicationSettingsService,
     DatasetService,
     ExperimentResultService,
     ExperimentService,
@@ -47,6 +50,7 @@ from mlforge.web.services import (
 )
 from mlforge.web.settings import WebSettings
 from mlforge.web.storage import (
+    ApplicationSettingsStore,
     DatasetStore,
     ExperimentStore,
     FinalizationStore,
@@ -71,6 +75,8 @@ def create_app(settings: WebSettings | None = None) -> FastAPI:
     store.initialize()
     experiment_store = ExperimentStore(resolved_settings.workspace)
     experiment_store.initialize()
+    application_settings_store = ApplicationSettingsStore(resolved_settings.workspace)
+    application_settings_store.initialize()
     job_store = JobStore(resolved_settings.workspace)
     job_store.initialize()
     job_store.recover_interrupted(recovered_at=datetime.now(UTC))
@@ -103,6 +109,7 @@ def create_app(settings: WebSettings | None = None) -> FastAPI:
         store,
         experiment_store,
         job_store,
+        application_settings_store,
         resolved_settings,
     )
     experiment_result_service = ExperimentResultService(
@@ -126,12 +133,18 @@ def create_app(settings: WebSettings | None = None) -> FastAPI:
         app.state.final_model_service,
         resolved_settings,
     )
+    app.state.application_settings_service = ApplicationSettingsService(
+        application_settings_store,
+        store,
+        resolved_settings,
+    )
     app.state.job_manager = job_manager
     app.include_router(router, prefix="/api")
     app.include_router(experiment_router, prefix="/api")
     app.include_router(job_router, prefix="/api")
     app.include_router(final_model_router, prefix="/api")
     app.include_router(prediction_router, prefix="/api")
+    app.include_router(settings_router, prefix="/api")
 
     @app.get(
         "/api/health/live",
@@ -212,6 +225,17 @@ def create_app(settings: WebSettings | None = None) -> FastAPI:
         return _error_response(
             status_code=status.HTTP_404_NOT_FOUND,
             code="experiment_not_found",
+            message=str(error),
+        )
+
+    @app.exception_handler(SettingsValidationError)
+    async def handle_settings_validation(
+        _request: Request,
+        error: SettingsValidationError,
+    ) -> JSONResponse:
+        return _error_response(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            code="invalid_settings",
             message=str(error),
         )
 

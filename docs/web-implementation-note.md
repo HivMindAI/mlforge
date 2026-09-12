@@ -1,11 +1,12 @@
 # Web Application Implementation Note
 
-**Status:** The local single-user application and regression-parity extension are complete. Both
-classification and regression journeys pass their final automated gates and browser verification.
+**Status:** The local single-user application, regression-parity extension, and bounded Settings
+surface are complete. Classification, regression, and Settings journeys pass their final automated
+gates and browser verification.
 
 ## Current architecture
 
-MLForge 0.5.0 is a typed, library-first Python package under `src/mlforge`. The command-line
+MLForge 0.6.0 is a typed, library-first Python package under `src/mlforge`. The command-line
 interface is an adapter: dataset validation, profiling, preprocessing, training, comparison,
 cross-validation, final fitting, artifact persistence, and inference live in importable domain and
 application modules. Expected failures use the `MLForgeError` hierarchy.
@@ -505,3 +506,23 @@ of redundant nested agent instruction files. The application remains deliberatel
 FastAPI process, SQLite metadata, uploaded datasets, immutable evidence, artifacts, and predictions
 belong to one trusted workspace. Hosted deployment, authentication, multi-user storage, and remote
 job execution remain outside this version.
+
+## Phase 16 settings and workspace management
+
+The disabled navigation placeholder now opens `/settings`. A schema-version-3 singleton row stores
+validated default fold count, task-specific ranking metrics, and task-specific estimator sets.
+These values initialize future browser experiment forms and choose their effective ranking metric;
+each created experiment still copies its complete effective configuration into immutable evidence,
+so later settings changes never rewrite prior results.
+
+Appearance is deliberately browser-local and supports system, light, and dark modes without adding
+identity or tenancy concepts. The Settings API reports only the workspace display name, bounded
+counts and byte usage, configured upload limit, reproducibility-relevant runtime versions, database
+schema version, and local readiness. It does not expose the absolute server filesystem path.
+
+The backup action uses SQLite's online backup operation, then builds a create-only ZIP containing
+that metadata snapshot and durable non-symlink workspace files. It excludes temporary dotfiles and
+the entire backup directory, so backups never recursively contain older archives. The UI warns that
+the download contains datasets, models, and prediction data. Runtime workspace location and upload
+limit remain environment-backed, read-only in the browser, and require an API restart; no reset,
+deletion, public authentication, or multi-user behavior is part of this phase.

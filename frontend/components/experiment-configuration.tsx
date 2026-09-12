@@ -13,6 +13,7 @@ import {
   type Estimator,
   type SupervisedTask,
 } from "@/lib/datasets";
+import { METRIC_LABELS, getApplicationSettings } from "@/lib/settings";
 
 type EstimatorOption = Readonly<{
   id: Estimator;
@@ -63,6 +64,7 @@ export function ExperimentConfiguration({ datasetId }: ExperimentConfigurationPr
   const [selectedEstimators, setSelectedEstimators] = useState<readonly Estimator[]>(
     estimatorOptions.classification.map((option) => option.id),
   );
+  const [rankingMetricLabel, setRankingMetricLabel] = useState("Balanced accuracy");
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -74,13 +76,24 @@ export function ExperimentConfiguration({ datasetId }: ExperimentConfigurationPr
 
   useEffect(() => {
     const controller = new AbortController();
-    void analyzeDataset(datasetId, controller.signal)
-      .then((loadedAnalysis) => {
+    void Promise.all([
+      analyzeDataset(datasetId, controller.signal),
+      getApplicationSettings(controller.signal),
+    ])
+      .then(([loadedAnalysis, loadedSettings]) => {
         setAnalysis(loadedAnalysis);
+        setFoldCount(loadedSettings.preferences.default_fold_count);
         if (loadedAnalysis.target.task_hint !== "undetermined") {
-          setSelectedEstimators(
-            estimatorOptions[loadedAnalysis.target.task_hint].map((option) => option.id),
-          );
+          const task = loadedAnalysis.target.task_hint;
+          if (task === "classification") {
+            setSelectedEstimators(loadedSettings.preferences.classification_estimators);
+            setRankingMetricLabel(
+              METRIC_LABELS[loadedSettings.preferences.classification_metric],
+            );
+          } else {
+            setSelectedEstimators(loadedSettings.preferences.regression_estimators);
+            setRankingMetricLabel(METRIC_LABELS[loadedSettings.preferences.regression_metric]);
+          }
         }
       })
       .catch((requestError: unknown) => {
@@ -192,7 +205,7 @@ export function ExperimentConfiguration({ datasetId }: ExperimentConfigurationPr
                 </p>
               </div>
               <span className="fixed-value">
-                {supportedTask === "classification" ? "Balanced accuracy" : "Root mean squared error"}
+                {rankingMetricLabel}
               </span>
             </div>
             <label className="fold-field" htmlFor="fold-count">

@@ -11,6 +11,7 @@ import pytest
 from mlforge.web.errors import WebStorageError
 from mlforge.web.storage import (
     WEB_SCHEMA_VERSION,
+    ApplicationSettingsStore,
     DatasetRecord,
     DatasetStore,
     ExperimentRecord,
@@ -155,3 +156,39 @@ def test_v1_schema_migrates_without_losing_dependent_lineage(tmp_path: Path) -> 
     )
     ExperimentStore(workspace).create(regression)
     assert ExperimentStore(workspace).get(regression.experiment_id) == regression
+
+
+def test_v2_schema_adds_default_settings_without_losing_workspace_data(tmp_path: Path) -> None:
+    """The settings migration must be additive for an existing v0.5.0 workspace."""
+    workspace = tmp_path / "v2-workspace"
+    dataset_store = DatasetStore(workspace)
+    dataset_store.initialize()
+    dataset_id = uuid4()
+    uploaded_path = dataset_store.final_upload_path(dataset_id)
+    uploaded_path.write_text("feature,target\n1,yes\n2,no\n", encoding="utf-8")
+    record = DatasetRecord(
+        dataset_id=dataset_id,
+        original_filename="existing.csv",
+        stored_filename=uploaded_path.name,
+        file_size_bytes=uploaded_path.stat().st_size,
+        row_count=2,
+        column_count=2,
+        columns=("feature", "target"),
+        target="target",
+        created_at=datetime.now(UTC),
+    )
+    dataset_store.create(record)
+    with sqlite3.connect(workspace / "mlforge.sqlite3") as connection:
+        connection.execute("DROP TABLE application_settings")
+        connection.execute("PRAGMA user_version = 2")
+
+    restored_store = DatasetStore(workspace)
+    restored_store.initialize()
+    defaults = ApplicationSettingsStore(workspace).get()
+
+    assert _database_version(workspace) == WEB_SCHEMA_VERSION
+    assert restored_store.get(dataset_id) == record
+    assert defaults.default_fold_count == 5
+    assert defaults.classification_metric == "balanced_accuracy"
+    assert defaults.regression_metric == "root_mean_squared_error"
+    assert defaults.updated_at is None

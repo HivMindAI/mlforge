@@ -24,6 +24,8 @@ checks, and final boilerplate cleanup for the first local single-user web versio
 
 The v0.5.0 workflow extends the same comparison, result, finalization, model-registry, and
 prediction journey to regression targets without changing the single-user deployment boundary.
+The v0.6.0 workflow adds validated defaults for future experiments, browser-local appearance,
+path-safe runtime and workspace diagnostics, and create-only restorable workspace backups.
 
 ## Local development
 

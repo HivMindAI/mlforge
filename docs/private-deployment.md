@@ -83,6 +83,11 @@ The `mlforge-data` volume is the complete application state. Stop both container
 filesystem or provider volume snapshot so SQLite, CSVs, manifests, and model archives remain from
 the same point in time. Encrypt backups because they contain user datasets and fitted models.
 
+The Settings screen can also download a create-only ZIP backup. It uses SQLite's backup
+operation for a consistent metadata snapshot, includes the durable workspace files referenced by
+that metadata, and excludes previous backup archives. Protect this download like the source volume:
+it contains datasets, fitted models, and prediction inputs and outputs.
+
 To restore, provision an empty volume, restore the entire directory tree, preserve ownership for
 container UID/GID `10001`, and then start the stack. Never restore only `mlforge.sqlite3`; its rows
 refer to immutable files elsewhere in the same workspace.
@@ -98,13 +103,14 @@ refer to immutable files elsewhere in the same workspace.
 For rollback, check out the previously deployed commit, rebuild both images, restore the matching
 volume snapshot if a storage format changed, and start the stack again.
 
-The v0.5.0 web metadata schema is version 2 and is recorded in SQLite `PRAGMA user_version`.
-Startup transactionally migrates a version-1 classification workspace by rebuilding only the
-experiment table with classification/regression task support while preserving its dependent
-lineage. It adopts an older unversioned workspace only after validating every table column and the
-foreign-key graph. A workspace with a newer schema version or incompatible table shape fails
-closed. Future schema changes must add an explicit ordered migration and a restore test; they must
-never rely on `CREATE TABLE IF NOT EXISTS` as an implicit migration strategy.
+The v0.6.0 web metadata schema is version 3 and is recorded in SQLite `PRAGMA user_version`.
+Startup adds the single application-settings row when migrating the v0.5.0 version-2 schema. It
+also retains the version-1 classification-to-regression experiment migration
+while preserving dependent lineage. An older unversioned workspace is adopted only after every
+table column and the foreign-key graph are validated. A workspace with a newer schema version or
+incompatible table shape fails closed. Future schema changes must add an explicit ordered migration
+and a restore test; they must never rely on `CREATE TABLE IF NOT EXISTS` as an implicit migration
+strategy.
 
 Always restore the complete matching volume snapshot when rolling back across a schema change.
 Never manually decrement `PRAGMA user_version`.

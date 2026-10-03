@@ -10,7 +10,8 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
-authors = [{ name = "HivMindAI" }]
+authors = [{ name = "Asadullah Hussaini" }]
+maintainers = [{ name = "HivMindAI" }]
 keywords = [
     "benchmarking",
     "cross-validation",
@@ -59,6 +60,7 @@ mlforge = "mlforge.cli:main"
 [project.urls]
 Homepage = "https://github.com/HivMindAI/mlforge"
 Repository = "https://github.com/HivMindAI/mlforge"
+PyPI = "https://pypi.org/project/hivmind-mlforge/"
 Documentation = "https://github.com/HivMindAI/mlforge/tree/main/docs"
 Issues = "https://github.com/HivMindAI/mlforge/issues"
 Roadmap = "https://github.com/HivMindAI/mlforge/blob/main/ROADMAP.md"

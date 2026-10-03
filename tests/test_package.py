@@ -46,6 +46,22 @@ def test_distribution_declares_and_contains_apache_license() -> None:
     )
 
 
+def test_distribution_identifies_author_and_maintainer() -> None:
+    """Package metadata should distinguish personal authorship from project branding."""
+    package_metadata = metadata(DISTRIBUTION_NAME)
+
+    assert package_metadata["Author"] == "Asadullah Hussaini"
+    assert package_metadata["Maintainer"] == "HivMindAI"
+
+
+def test_distribution_links_canonical_public_pages() -> None:
+    """Package metadata should link the maintained repository and published distribution."""
+    project_urls = metadata(DISTRIBUTION_NAME).get_all("Project-URL") or []
+
+    assert "Repository, https://github.com/HivMindAI/mlforge" in project_urls
+    assert "PyPI, https://pypi.org/project/hivmind-mlforge/" in project_urls
+
+
 def test_distribution_is_marked_as_typed() -> None:
     """Type checkers should be able to consume MLForge's inline annotations."""
     marker = resources.files("mlforge").joinpath("py.typed")

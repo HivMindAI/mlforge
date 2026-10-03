@@ -1,0 +1,12 @@
+cff-version: 1.2.0
+message: "If you use MLForge in academic work, please cite it using this metadata."
+title: "MLForge"
+type: software
+authors:
+  - given-names: Asadullah
+    family-names: Hussaini
+version: 0.6.0
+date-released: 2026-09-12
+repository-code: "https://github.com/HivMindAI/mlforge"
+url: "https://pypi.org/project/hivmind-mlforge/"
+license: Apache-2.0

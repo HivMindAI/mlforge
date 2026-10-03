@@ -7,9 +7,15 @@ import tarfile
 from pathlib import Path
 
 REQUIRED_SUFFIXES = (
+    "CITATION.cff",
     "compose.private.yaml",
     "deployment/backend.Dockerfile",
     "deployment/frontend.Dockerfile",
+    "docs/assets/screenshots/dataset-overview.png",
+    "docs/assets/screenshots/experiment-configuration.png",
+    "docs/assets/screenshots/model-comparison.png",
+    "docs/assets/screenshots/prediction-interface.png",
+    "scripts/generate_portfolio_demo_data.py",
     "frontend/package.json",
     "frontend/package-lock.json",
     "frontend/playwright.config.ts",

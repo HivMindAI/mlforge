@@ -22,13 +22,15 @@ Published release contents are immutable. A fix always receives a new version.
 
 ## Supported product after v0.6.0
 
-v0.3.0 is the feature-complete release of the local Python workflow. v0.4.0 adds a supported local
-FastAPI adapter, Next.js interface, versioned SQLite workspace, and private two-container profile
-for one trusted operator. v0.5.0 extends cross-validation selection, final fitting, and the web
-journey to regression. The frontend and deployment sources are shipped in the source archive and
-repository; they are not installed into Python site-packages by the wheel. v0.6.0 adds persisted
-defaults for future experiments, browser-local appearance, path-safe workspace diagnostics, and
-create-only restorable workspace backups without changing the single-user boundary.
+v0.3.0 is the feature-complete release of the local Python workflow. The local FastAPI adapter,
+Next.js interface, versioned SQLite workspace, and private two-container profile were documented as
+the 0.4.0 development milestone but first shipped in the tagged and published v0.5.0 release; no
+standalone v0.4.0 distribution exists. v0.5.0 also extends cross-validation selection, final
+fitting, and the web journey to regression. The frontend and deployment sources are shipped in the
+source archive and repository; they are not installed into Python site-packages by the wheel.
+v0.6.0 adds persisted defaults for future experiments, browser-local appearance, path-safe
+workspace diagnostics, and create-only restorable workspace backups without changing the
+single-user boundary.
 
 Shared-service, multi-user, authenticated public hosting, and distributed execution remain
 conditional roadmap work. The single-user product should otherwise receive focused bug, security,

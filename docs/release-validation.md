@@ -7,9 +7,13 @@ committed to the repository or included in distributions.
 
 The default `python -m pytest` command measures the installed `mlforge` package, reports missing
 statements, and fails below 80% coverage. The threshold prevents material regressions without
-encouraging tests that merely chase lines. The v0.6.0 candidate has 258 passing tests at 85.36%
-statement coverage and includes regression cross-validation, finalization, version-3 web-workspace
-migration, Settings and backup behavior, HTTP workflow, and browser coverage.
+encouraging tests that merely chase lines. Release validation for v0.6.0 recorded 258 passing tests
+at 85.36% statement coverage, including regression cross-validation, finalization, version-3
+web-workspace migration, Settings and backup behavior, HTTP workflow, and browser coverage. These
+figures describe the tagged v0.6.0 release; later source checkouts must be measured independently.
+The portfolio-evidence source validation on 2026-10-03 recorded 260 passing tests at 85.36%
+statement coverage after adding two package-metadata assertions; it does not revise the tagged
+release result.
 
 GitHub Actions runs Ruff linting, Ruff formatting checks, strict mypy, pytest with the coverage
 floor, package builds, `pip check`, and the installed-wheel smoke workflow on this matrix:
@@ -21,6 +25,14 @@ floor, package builds, `pip check`, and the installed-wheel smoke workflow on th
 
 The release workflow independently rebuilds and validates distributions from the published tag
 before the protected PyPI deployment.
+
+### Published v0.6.0 metadata boundary
+
+PyPI release files are immutable. The artifacts published on 2026-09-12 still display their
+original `Author: HivMindAI` metadata, and their embedded long description calls v0.6.0 a release
+candidate. This repository update does not alter or republish those files. Source metadata now
+identifies Asadullah Hussaini as author and HivMindAI as maintainer so the distinction is correct in
+the next legitimate release.
 
 The private-deployment CI job builds both containers, which runs frontend lint and the Next.js
 production build, starts the Compose profile, and waits for browser-facing readiness through the
@@ -41,6 +53,29 @@ The tests call `sklearn.datasets.load_breast_cancer` and `sklearn.datasets.load_
 not download data and do not redistribute dataset files in the MLForge wheel or source archive.
 The derived categorical columns and missing values are deterministic test transformations used to
 exercise supported input behavior.
+
+## Portfolio screenshot workflow
+
+The README screenshots record one real Core 0.6.0 application run. The ignored CSV files were
+generated with `scripts/generate_portfolio_demo_data.py` using seed `20260817`; the generation
+recipe is distributed, while the generated synthetic data remains local.
+
+| Evidence | Verified value |
+| --- | --- |
+| Training CSV | `data/large_customer_churn_train.csv` — 25,000 rows |
+| Training SHA-256 | `26a62f0ab5e320f29b192bfbeaa7b0b3c5343b25a3d25c6fb0d9e40e372bf412` |
+| Target | `churn` — binary classification |
+| Models | Logistic Regression, Random Forest Classifier, Dummy Classifier |
+| Validation | 5 shared stratified folds; 20,000 train and 5,000 validation rows per fold |
+| Ranking metric | Balanced Accuracy |
+| Rank-one result | Logistic Regression — 65.54% mean, 0.50% population standard deviation |
+| Prediction CSV | `data/large_customer_churn_predict.csv` — 2,500 target-free rows |
+| Prediction SHA-256 | `0f20400813adb4da9bf07c5a73ebbda4418691d1f66fb1b55ed622dca02f9131` |
+| Prediction result | 2,500 rows processed; 0 invalid rows |
+
+The screenshots are application output, not mockups. The underlying generated CSVs, temporary web
+workspace, benchmark manifest, finalized artifact, and prediction output are intentionally ignored
+and excluded from distributions.
 
 ## v0.2.0 benchmark release-candidate matrix
 

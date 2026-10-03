@@ -1,191 +1,174 @@
-# MLForge
+# MLForge — Reproducible ML Toolkit for Tabular Data
 
+[![CI](https://github.com/HivMindAI/mlforge/actions/workflows/ci.yml/badge.svg)](https://github.com/HivMindAI/mlforge/actions/workflows/ci.yml)
+[![v0.6.0 coverage](https://img.shields.io/badge/v0.6.0%20coverage-85.36%25-brightgreen)](docs/release-validation.md)
 [![PyPI](https://img.shields.io/pypi/v/hivmind-mlforge)](https://pypi.org/project/hivmind-mlforge/)
 [![Python](https://img.shields.io/pypi/pyversions/hivmind-mlforge)](https://pypi.org/project/hivmind-mlforge/)
-[![CI](https://github.com/HivMindAI/mlforge/actions/workflows/ci.yml/badge.svg)](https://github.com/HivMindAI/mlforge/actions/workflows/ci.yml)
 [![License](https://img.shields.io/github/license/HivMindAI/mlforge)](LICENSE)
 
-**A reproducible Python toolkit for training, evaluating, selecting, and fitting tabular
-machine-learning models with leakage-safe preprocessing and deterministic cross-validation.**
+MLForge turns a CSV file and an explicit target column into a reproducible chain of evidence: validated data, leakage-safe model comparisons, immutable experiment records, a verified final model, and schema-checked predictions.
 
-MLForge is a local, library-first workflow built on pandas and scikit-learn. It turns a CSV and an
-explicit target into inspectable evidence: validated data, fair model comparisons, immutable JSON
-manifests, trusted-local model artifacts, and schema-checked predictions. It is deliberately small,
-single-process, and honest about what it does not implement.
+Created and led by **Asadullah Hussaini**; maintained under the **HivMindAI** repository and release identity.
 
-## Quick start
+## Abstract
 
-Install the published distribution (the import package and command are both named `mlforge`):
+MLForge is a local, end-to-end machine-learning toolkit for supervised classification and regression on tabular data. It addresses practical reproducibility failures that are easy to introduce in small and medium ML projects: preprocessing before validation, comparing models on different partitions, unstable ranking, incomplete experiment history, and model artifacts with unclear provenance.
+
+The project provides one tested modeling core through a Python API, command-line interface, FastAPI adapter, and Next.js application. Every supported workflow records the dataset fingerprint, configuration, random seed, partitions, metrics, warnings, dependency versions, and artifact lineage needed to inspect how a result was produced.
+
+## Motivation
+
+A high validation score is not useful evidence when its origin cannot be reconstructed. Common tabular ML workflows can silently become unreliable when:
+
+- imputers, scalers, or encoders learn from validation rows;
+- candidate estimators receive different train/validation partitions;
+- random state or tie-breaking rules are not recorded;
+- failed candidates disappear from the final report;
+- the selected model is evaluated and presented as though it were never selected;
+- a serialized model is loaded without checking its schema, checksum, or source.
+
+MLForge makes these boundaries explicit and testable. It favors a small, inspectable local system over a hidden or distributed execution model.
+
+## Key Contributions
+
+- **Leakage-safe evaluation:** preprocessing is fitted only on the training partition of each holdout split or cross-validation fold.
+- **Deterministic comparison:** all estimators use the same recorded partitions, seeded randomness, direction-aware metrics, and stable tie-breaking.
+- **Evidence-first tracking:** immutable JSON manifests retain configuration, hashes, versions, timings, warnings, failures, metrics, and lineage.
+- **Honest model selection:** cross-validation selects an estimator; final fitting is a separate, explicit operation that does not relabel training performance as evaluation.
+- **Verifiable artifacts:** `.mlforge` archives include schema, environment, lineage, size, and checksum metadata that can be inspected before trusted deserialization.
+- **One core, multiple interfaces:** the Python API and CLI own the modeling behavior; FastAPI and Next.js provide a local full-stack workflow without duplicating the ML logic.
+
+## End-to-End Workflow
+
+```mermaid
+flowchart LR
+    A["CSV + target"] --> B["Validate + fingerprint"]
+    B --> C["Profile data"]
+    B --> D["Create shared CV folds"]
+    D --> E["Fit fold-local preprocessing"]
+    E --> F["Train + evaluate candidates"]
+    F --> G["Deterministic leaderboard"]
+    G --> H["Immutable selection manifest"]
+    H --> I["Explicit all-row final fit"]
+    I --> J["Versioned .mlforge artifact"]
+    J --> K["Schema-checked prediction"]
+```
+
+1. Load and validate a UTF-8 CSV with an explicit target.
+2. Profile columns, missing values, cardinality, distributions, and task hints.
+3. Create a deterministic holdout split or shared cross-validation folds.
+4. Infer feature roles and fit preprocessing independently inside each training partition.
+5. Train classification or regression baselines and calculate task-appropriate metrics.
+6. Rank successful candidates while preserving warnings and failure evidence.
+7. Persist the complete selection protocol as an immutable manifest.
+8. Explicitly refit the selected estimator on every selected row.
+9. Save a versioned artifact and validate future prediction CSVs against its schema.
+
+## Quick Start
+
+MLForge supports Python 3.11 and 3.12. The current stable release is **v0.6.0**, published on [PyPI](https://pypi.org/project/hivmind-mlforge/). The distribution is named `hivmind-mlforge`; the import package and command are both named `mlforge`.
 
 ```bash
 python -m pip install hivmind-mlforge
 mlforge --version
 ```
 
-From a repository clone, run the bundled classification benchmark:
+From a repository checkout, run the included classification example:
 
 ```bash
-mlforge benchmark examples/customer_churn.csv --target churn --metric balanced_accuracy --cross-validation-folds 3 --benchmarks-dir mlbenchmarks
+mlforge dataset profile examples/customer_churn.csv --target churn
+
+mlforge benchmark examples/customer_churn.csv \
+  --target churn \
+  --metric balanced_accuracy \
+  --cross-validation-folds 3 \
+  --benchmarks-dir mlbenchmarks
 ```
 
-Representative output from the bundled eight-row dataset is shown below. Scores are captured from
-the real command; run IDs, filesystem paths, and timing are omitted because they vary. The tiny
-dataset demonstrates the workflow, not estimator quality.
-
-```text
-Protocol: 3-fold stratified cross-validation (shuffle seed=42)
-Primary metric: balanced_accuracy
-Leaderboard:
-  1. logistic-regression:        0.833333 +/- 0.236
-  2. random-forest-classifier:   0.833333 +/- 0.236
-  3. dummy-classifier:           0.500000 +/- 0.000
-
-Best observed mean: logistic-regression ranked first.
-Note: cross-validation selects an estimator; it does not fit a final deployment model.
-```
-
-Final fitting is a separate, explicit decision. Copy the benchmark UUID from that command and run:
+The benchmark prints a deterministic leaderboard and saves its complete evidence. Copy the returned benchmark UUID to perform the separate final fit:
 
 ```bash
-mlforge finalize examples/customer_churn.csv --target churn --benchmark-id BENCHMARK_ID --benchmarks-dir mlbenchmarks --final-models-dir mlfinalmodels --artifacts-dir artifacts
+mlforge finalize examples/customer_churn.csv \
+  --target churn \
+  --benchmark-id BENCHMARK_ID \
+  --benchmarks-dir mlbenchmarks \
+  --final-models-dir mlfinalmodels \
+  --artifacts-dir artifacts
 ```
 
-MLForge verifies the persisted selection and exact dataset, refits the rank-one estimator on all
-rows, and creates a new immutable final-model manifest plus trusted-local artifact. The recorded
-cross-validation score remains selection evidence; it is not relabeled as post-selection test
-performance.
+Run schema-validated batch inference only with an artifact whose origin and custody you trust:
 
-![MLForge cross-validation benchmark terminal output](https://raw.githubusercontent.com/HivMindAI/mlforge/main/docs/assets/benchmark-terminal.svg)
+```bash
+mlforge predict artifacts/FINAL_MODEL_ID.mlforge \
+  examples/prediction_customers.csv \
+  --trust-artifact \
+  --output predictions.csv
+```
 
-Continue with the [complete local workflow tutorial](docs/tutorial.md) to train, inspect, save,
-load, and predict with a fitted artifact.
+For a guided walkthrough, see the [complete local workflow tutorial](docs/tutorial.md).
 
-## Why MLForge
+## What MLForge Supports
 
-Model comparison is easy to make convincing and surprisingly hard to make fair. Preprocessing the
-full dataset leaks validation information. Giving estimators different partitions makes scores
-incomparable. Unstable tie-breaking makes repeated runs hard to explain. Recording only the winning
-number discards the evidence needed to audit it later.
-
-MLForge makes those concerns explicit:
-
-| Engineering problem | MLForge boundary |
+| Area | Supported workflow |
 | --- | --- |
-| Validation data influences imputation, scaling, or encoding | Preprocessing is fitted only on the training partition of each holdout or fold |
-| Estimators are compared on different rows | Every estimator receives the same recorded partition fingerprints |
-| Equivalent scores produce unstable ordering | Mean, population standard deviation, and estimator ID define deterministic ranking |
-| Failed candidates disappear from the report | Expected failures remain visible in terminal immutable manifests |
-| A metric cannot be connected to its inputs | Dataset hashes, configuration, seeds, versions, partitions, warnings, and metrics are persisted |
-| Serialized models are treated as ordinary data | Safe inspection is separate from explicit trusted pickle loading |
+| Data | Strict local CSV validation, bounded reads, fingerprints, and deterministic profiles |
+| Tasks | Supervised tabular classification and regression |
+| Preprocessing | Numeric imputation/scaling and categorical imputation/encoding inside the evaluation boundary |
+| Evaluation | Deterministic holdout comparison and 2–10 fold cross-validation |
+| Baselines | Logistic regression, dummy and random-forest classifiers; Ridge and random-forest regressors |
+| Selection | Direction-aware ranking with deterministic tie-breaking and visible failures |
+| Finalization | Verified selection lineage followed by an explicit all-row final fit |
+| Artifacts | Versioned local archives with checksums, schema, environment, and lineage metadata |
+| Inference | Exact feature-schema validation, column-order restoration, and atomic CSV output |
+| Interfaces | Typed Python API, CLI, FastAPI backend, and responsive Next.js web application |
+| Deployment | Local execution and a private two-container profile for one trusted operator |
 
-The result is not an experiment-tracking platform. It is a focused reference workflow whose data,
-modeling, persistence, and trust boundaries are small enough to understand and test.
+## Technical Stack
 
-## Core capabilities
+- **Core:** Python 3.11+, pandas, scikit-learn
+- **API:** FastAPI, Pydantic, Uvicorn
+- **Web:** Next.js 16, React 19, TypeScript
+- **Storage:** SQLite metadata plus immutable local files
+- **Deployment:** Docker Compose with persistent workspace storage
+- **Quality:** pytest, Ruff, strict mypy, Playwright, package and wheel validation
 
-### Training
+## Validation Evidence
 
-- Strict local CSV validation and deterministic profiling.
-- Explicit classification or regression task selection.
-- Deterministic train/validation splitting and leakage-safe preprocessing.
-- Five baseline estimators with task-appropriate held-out metrics.
-- Versioned, create-only run manifests with failure evidence.
+Release validation for v0.6.0 recorded **258 passing behavioral tests** and **85.36% statement coverage**, above the enforced 80% floor. These are results from the tagged release, not a claim about every later source checkout. The suite covered ingestion, profiling, leakage-safe preprocessing, classification and regression, holdout and cross-validation comparisons, immutable manifests, artifact validation, finalization, web workflows, and prediction downloads.
 
-### Artifacts and prediction
+CI validates:
 
-- Fitted preprocessing and estimator saved together in a versioned `.mlforge` archive.
-- Structure, schema, environment, size, lineage hash, and payload checksum inspection without
-  deserializing the model.
-- Explicit trusted loading for pickle-based artifacts.
-- Exact feature-schema validation, column-order restoration, batch prediction, and atomic CSV
-  output.
+- Ubuntu on Python 3.11 and 3.12;
+- Windows on Python 3.12;
+- Ruff linting and formatting;
+- strict mypy type checking;
+- pytest with the coverage floor;
+- source and wheel builds;
+- installed-wheel smoke tests; and
+- a Playwright browser test of the upload-to-prediction path.
 
-### Benchmarking
+Offline integration tests also exercise scikit-learn's breast cancer and diabetes datasets. See [release validation](docs/release-validation.md) for the exact evidence and boundaries.
 
-- Task-aware defaults: three classification baselines or Ridge and random-forest regression.
-- One shared holdout split, selectable primary metric, deterministic ranking, and fitted in-memory
-  winner.
-- A strict aggregate manifest that references every underlying run.
+## Interfaces
 
-### Cross-validation
-
-- Deterministic 2-10 fold benchmarking: stratified folds for classification and ordinary shuffled
-  K-folds for regression.
-- A fresh estimator and fold-local preprocessing pipeline for every training fold.
-- Identical ordered fold fingerprints for every estimator.
-- Per-fold classification or regression metrics, arithmetic means, population standard
-  deviations, direction-aware ranking, warnings, timing, and failure location.
-- Selection evidence only: no nested-tuning or untouched post-selection performance claim.
-
-### Explicit final-model fitting
-
-- Accepts only a persisted successful cross-validation result and its exact selected dataset.
-- Reconstructs the recorded preprocessing, feature-role, seed, estimator, and parameter contract.
-- Fits one new preprocessing/model pipeline on every selected row without inventing new metrics.
-- Writes a create-only final-model manifest and a version-2 artifact lineage record.
-- Reuses safe inspection, explicit trusted loading, schema validation, and batch prediction.
-
-## Reliability guarantees
-
-- **Fit after split:** no data-derived transformer state is learned from validation rows.
-- **Comparable evidence:** dataset bytes, target, configuration, seed, and exact partitions are
-  recorded and checked before comparison.
-- **Immutable local history:** run, benchmark, cross-validation, and final-model manifests are
-  atomically created and never silently overwritten.
-- **Bounded input handling:** CSV and artifact readers validate structure and enforce documented
-  size limits.
-- **Fail-closed artifact loading:** untrusted, corrupt, incompatible, or structurally invalid
-  artifacts are rejected.
-- **Reproducible randomness:** supported splits and randomized estimators use recorded seeds;
-  random forests use one process.
-
-Numerical results can still change when dependency versions change. Manifests record the exact
-Python, MLForge, pandas, NumPy, SciPy, and scikit-learn versions so the environment can be
-reconstructed and interpreted.
-
-## Architecture
-
-```mermaid
-flowchart LR
-    A["CSV + explicit target"] --> B["Validation + fingerprint"]
-    B --> C["Profile"]
-    B --> D["Holdout split"]
-    B --> E["Shared task-aware folds"]
-    D --> F["Leakage-safe pipeline fit"]
-    E --> G["Fresh fold-local pipeline fits"]
-    F --> H["Metrics + run manifest"]
-    G --> I["Aggregates + leaderboard"]
-    I --> J["Cross-validation manifest"]
-    J --> M["Explicit all-row final fit"]
-    M --> K
-    H --> K["Trusted-local artifact"]
-    K --> L["Schema validation + prediction"]
-```
-
-The CLI is a thin adapter over importable domain APIs. Dataset, pipeline, training, benchmark, run,
-artifact, and inference modules own their behavior; none depends on a web service, database, or
-worker. See [the architecture document](docs/architecture.md) for responsibilities, dependency
-direction, extension points, and security boundaries.
-
-## Python API
-
-The same cross-validation workflow is available as a typed Python API:
+### Python API
 
 ```python
 from pathlib import Path
 
+from mlforge.artifacts import LocalArtifactStore
 from mlforge.benchmarks import (
     CrossValidationConfig,
     LocalCrossValidationStore,
     cross_validate_benchmark,
 )
-from mlforge.artifacts import LocalArtifactStore
 from mlforge.datasets import load_csv
 from mlforge.final_models import LocalFinalModelStore, fit_selected_model
 from mlforge.pipelines import CrossValidationSplitConfig
 
 dataset = load_csv(Path("examples/customer_churn.csv"), target="churn")
-result = cross_validate_benchmark(
+
+selection = cross_validate_benchmark(
     dataset,
     CrossValidationConfig(
         primary_metric="balanced_accuracy",
@@ -194,86 +177,68 @@ result = cross_validate_benchmark(
     store=LocalCrossValidationStore(Path("mlbenchmarks/cross-validation")),
 )
 
-print(result.manifest.winner)
-print(result.manifest.to_json())
-
 final_model = fit_selected_model(
     dataset,
-    result,
+    selection,
     final_model_store=LocalFinalModelStore(Path("mlfinalmodels")),
     artifact_store=LocalArtifactStore(Path("artifacts")),
 )
-print(final_model.manifest.to_json())
+
+print(selection.manifest.winner)
 print(final_model.artifact_path)
 ```
 
-Cross-validation deliberately returns an immutable selection record. `fit_selected_model` is the
-separate all-row refit-and-save step and never reports training-set metrics as evaluation. For the
-complete workflow, see [`examples/finalize_customer_churn.py`](examples/finalize_customer_churn.py)
-and the [Python API reference](docs/api.md).
+The public API returns typed results and immutable manifests. It does not require a web server, database, notebook, or background worker.
 
-## CLI
+### CLI
 
-Every command provides `--help`; user-facing workflows also support `--json` where structured
-output is useful.
+Every command provides `--help`. User-facing workflows also support `--json` where structured output is useful.
 
 | Workflow | Example |
 | --- | --- |
 | Profile | `mlforge dataset profile DATA.csv --target TARGET --json` |
-| Train | `mlforge train DATA.csv --target TARGET --task classification --estimator logistic-regression --runs-dir mlruns` |
-| Holdout benchmark | `mlforge benchmark DATA.csv --target TARGET --metric balanced_accuracy --runs-dir mlruns --benchmarks-dir mlbenchmarks` |
-| Cross-validation | `mlforge benchmark DATA.csv --target TARGET --metric balanced_accuracy --cross-validation-folds 5 --benchmarks-dir mlbenchmarks` |
-| Fit selected final model | `mlforge finalize DATA.csv --target TARGET --benchmark-id BENCHMARK_ID --benchmarks-dir mlbenchmarks --final-models-dir mlfinalmodels --artifacts-dir artifacts` |
-| Inspect a run | `mlforge runs show RUN_ID --runs-dir mlruns --json` |
-| Inspect an artifact safely | `mlforge artifacts inspect artifacts/RUN_ID.mlforge --json` |
-| Predict from a trusted artifact | `mlforge predict artifacts/RUN_ID.mlforge FEATURES.csv --trust-artifact --output predictions.csv` |
+| Train | `mlforge train DATA.csv --target TARGET --task classification --estimator logistic-regression` |
+| Holdout comparison | `mlforge benchmark DATA.csv --target TARGET --metric balanced_accuracy` |
+| Cross-validation | `mlforge benchmark DATA.csv --target TARGET --metric balanced_accuracy --cross-validation-folds 5` |
+| Final fit | `mlforge finalize DATA.csv --target TARGET --benchmark-id BENCHMARK_ID` |
+| Inspect a run | `mlforge runs show RUN_ID --json` |
+| Inspect an artifact | `mlforge artifacts inspect artifacts/MODEL_ID.mlforge --json` |
+| Predict | `mlforge predict artifacts/MODEL_ID.mlforge FEATURES.csv --trust-artifact --output predictions.csv` |
 
-Use `--trust-artifact` only after verifying the artifact's source and custody. Inspection and a
-matching checksum do not make hostile pickle content safe.
+### Local Web Application
 
-## Installation
+The single-user web interface provides:
 
-MLForge supports Python 3.11 and 3.12. Create an isolated environment before installation:
+- CSV upload, validation, profiling, and explicit target selection;
+- classification and regression experiment configuration;
+- durable execution states and detailed cross-validation results;
+- explicit rank-one model finalization;
+- a local model registry with lineage, schema, and runtime versions;
+- schema-validated prediction upload, preview, and CSV download;
+- browser-local appearance and experiment defaults;
+- workspace diagnostics, usage counts, and create-only backup download.
 
-```bash
-python -m venv .venv
-python -m pip install hivmind-mlforge
-```
+These screenshots were captured from one real local application run using the deterministic
+synthetic customer-churn data produced by
+[`scripts/generate_portfolio_demo_data.py`](scripts/generate_portfolio_demo_data.py). The training
+CSV contains 25,000 rows with target `churn`; the target-free prediction CSV contains 2,500 rows.
+The run compares Logistic Regression, Random Forest Classifier, and Dummy Classifier with balanced
+accuracy across five shared stratified folds. They are not mockups.
 
-Activate with `.venv\Scripts\Activate.ps1` on Windows PowerShell or
-`source .venv/bin/activate` on macOS/Linux. For a development checkout, install the development
-extra instead:
+| Dataset overview | Experiment configuration |
+| --- | --- |
+| ![MLForge profiling a 25,000-row customer churn demo dataset](docs/assets/screenshots/dataset-overview.png) | ![MLForge five-fold cross-validation configuration with three selected classifiers](docs/assets/screenshots/experiment-configuration.png) |
+| Model comparison | Prediction interface |
+| ![MLForge deterministic model comparison results](docs/assets/screenshots/model-comparison.png) | ![MLForge schema-checked prediction interface](docs/assets/screenshots/prediction-interface.png) |
 
-```bash
-python -m pip install -e ".[dev]"
-```
-
-### Local web application
-
-The local single-user web interface supports the application shell, dashboard,
-CSV upload, core-backed validation, explicit target selection, a real data overview, and persisted
-classification or regression comparison configuration, execution, core-backed experiment results,
-and explicit rank-one model finalization. It also provides a Models screen for reviewing completed
-local models,
-their source evidence, input schema, and recorded runtime. Finalized local models can run
-schema-validated prediction CSVs, preview the first 20 results, and download the complete output.
-The Experiments screen lists saved configurations and durable execution states, with links to the
-existing dataset metadata, benchmark evidence, failure details, and finalized model information.
-The interface uses a responsive modal navigation on smaller screens, visible keyboard focus, named
-scrollable table regions, associated form guidance, and text-based status labels. Important routes
-distinguish restrained loading, true empty, retryable server-error, validation-error, success, and
-partial-result states; the dashboard reflects persisted experiment history rather than sample data.
-The Settings screen provides browser-local appearance, validated defaults for future comparison
-forms, workspace counts and usage, runtime diagnostics, and a create-only backup download. Runtime
-workspace and upload-limit controls remain environment-backed and require an API restart.
-Install its optional adapter and start the API from the repository root:
+Install the optional web dependencies and start the API from the repository root:
 
 ```bash
 python -m pip install -e ".[dev,web]"
 python -m mlforge.web
 ```
 
-In another terminal, start the frontend:
+In another terminal:
 
 ```bash
 cd frontend
@@ -281,52 +246,77 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`. Local upload bytes and SQLite metadata are written under the ignored
-`.mlforge-web/` workspace. Use Predictions to select a finalized model and submit a matching CSV.
-The web workspace is intentionally separate from CLI directories such as `mlruns/` and
-`artifacts/`; existing CLI history is not imported automatically. Retrain or explicitly reproduce
-the workflow when an older artifact records a different MLForge or dependency environment.
+Open `http://localhost:3000`. The ignored `.mlforge-web/` directory stores uploaded files, immutable evidence, artifacts, predictions, and SQLite metadata. The web workspace is deliberately separate from CLI output directories.
 
-The Python wheel contains the library, CLI, and FastAPI adapter. The Next.js frontend and private
-container profile are distributed through the repository and source archive because they are built
-with Node.js and Docker rather than installed into Python site-packages.
+## Reproducibility and Security Boundaries
 
-### Private deployment profile
+MLForge provides the following guarantees inside its supported workflow:
 
-The repository includes a provider-neutral two-container profile for one trusted operator. It keeps
-the API on an internal network, binds the browser-facing port to host loopback, persists the complete
-workspace in one Docker volume, and supplies liveness/readiness probes. It must be reached through
-an SSH tunnel or a reviewed private access gateway; it is not safe for direct public exposure.
+- **Fit after split:** data-derived preprocessing state is never learned from validation rows.
+- **Comparable evidence:** candidates receive the same recorded dataset, seed, and partitions.
+- **Immutable history:** run, benchmark, cross-validation, and final-model manifests are created once and never silently overwritten.
+- **Reproducible randomness:** supported splits and randomized estimators use recorded seeds; random forests use one process.
+- **Bounded input handling:** CSV and artifact readers validate structure and enforce documented size limits.
+- **Fail-closed loading:** corrupt, incompatible, structurally invalid, or explicitly untrusted artifacts are rejected.
 
-See [private single-user deployment](docs/private-deployment.md) for the architecture, startup,
-backup, upgrade, rollback, and security boundaries.
+Dependency versions can still affect numerical results. Every manifest records the relevant Python, MLForge, pandas, NumPy, SciPy, and scikit-learn versions.
 
-## Validation evidence
+`.mlforge` artifacts contain a Python pickle payload. Metadata inspection does not deserialize that payload, but checksums do not make hostile pickle data safe. Use trusted loading only for artifacts created and kept within a trusted workflow. See the [artifact security model](docs/security.md).
 
-The v0.6.0 release candidate has 258 passing behavioral tests at 85.36% statement coverage,
-including regression comparison, finalization, and web prediction coverage. It enforces a
-conservative 80% floor. CI covers Ubuntu on Python
-3.11/3.12 and Windows on Python 3.12, with Ruff, formatting, strict mypy, pytest, package builds,
-`pip check`, and installed-wheel smoke tests. Offline real-data tests exercise scikit-learn's breast
-cancer and diabetes datasets; separate release validation covers Iris, Wine, and breast cancer
-cross-validation workflows.
+## Scope and Limitations
 
-See [release validation](docs/release-validation.md) for the dataset and clean-package boundaries.
+MLForge v0.6.0 is a **feature-complete local product in maintenance mode**. Its intended boundary is one trusted operator running tabular classification or regression on a local machine or through the private deployment profile.
 
-## Documentation
+It deliberately does not claim to provide:
 
-- [Complete local workflow tutorial](docs/tutorial.md)
-- [Python API reference](docs/api.md)
-- [Architecture and design boundaries](docs/architecture.md)
-- [Compatibility and versioning policy](docs/compatibility.md)
-- [Artifact trust and secure-use guidance](docs/security.md)
-- [Release validation](docs/release-validation.md)
-- [Maintainer release procedure](docs/releasing.md)
-- [Roadmap](ROADMAP.md) and [changelog](CHANGELOG.md)
+- automated hyperparameter optimization;
+- nested evaluation or an untouched post-selection test estimate;
+- distributed or GPU training;
+- shared experiment storage or multi-user isolation;
+- request authentication or safe direct public exposure;
+- public online model serving; or
+- production drift detection and observability.
+
+These are product boundaries, not hidden roadmap promises. Shared-service and multi-user infrastructure remain conditional on demonstrated requirements. See the [roadmap](ROADMAP.md).
+
+## Private Deployment
+
+The repository includes a provider-neutral two-container profile for one trusted operator. The API remains on an internal network, the browser-facing port binds to host loopback, the complete workspace is persisted in one Docker volume, and both containers provide health checks.
+
+Access it through an SSH tunnel or a reviewed private gateway. It is not designed for direct public exposure. See [private single-user deployment](docs/private-deployment.md) for startup, backup, upgrade, rollback, and security guidance.
+
+## Project Structure
+
+```text
+mlforge/
+|- src/mlforge/          # Importable production package
+|  |- datasets/          # Strict ingestion and deterministic profiles
+|  |- pipelines/         # Splits, folds, feature roles, and preprocessing
+|  |- training/          # Baseline fitting and evaluation
+|  |- benchmarks/        # Holdout/CV orchestration, ranking, and manifests
+|  |- final_models/       # Selection verification and explicit all-row fitting
+|  |- runs/              # Immutable experiment records and comparison
+|  |- artifacts/         # Trusted-local model persistence
+|  `- web/               # Thin FastAPI adapter over the public core APIs
+|- frontend/             # Next.js single-user web interface
+|- tests/                # Unit, integration, HTTP, CLI, and real-data tests
+|- examples/             # Runnable workflows and small example CSVs
+|- scripts/              # Release validation and deterministic demo-data generation
+|- deployment/           # Backend and frontend container definitions
+|- docs/                 # Architecture, tutorial, security, and release guidance
+`- .github/workflows/    # Cross-platform CI and trusted release publishing
+```
 
 ## Development
 
-Run the same quality gate used by CI:
+Create an isolated environment and install the development dependencies:
+
+```bash
+python -m venv .venv
+python -m pip install -e ".[dev,web]"
+```
+
+Run the Python quality gate:
 
 ```bash
 ruff check .
@@ -336,70 +326,55 @@ python -m pytest
 python -m build
 python scripts/check_source_archive.py dist
 python -m twine check --strict dist/*
+```
+
+Run the frontend quality gate:
+
+```bash
 cd frontend
+npm install
 npm run lint
 npm run build
 npx playwright install chromium
 npm run test:e2e
 ```
 
-`python -m pytest` includes `pytest-cov` and fails below 80% statement coverage. The CI build then
-installs the wheel into a separate environment and executes `scripts/wheel_smoke.py` outside the
-source tree. The Playwright test launches both local servers against an isolated temporary workspace
-and verifies the complete browser workflow through prediction CSV download.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the complete contributor workflow.
 
-## Project structure
+## Documentation
 
-```text
-mlforge/
-|- src/mlforge/          # Importable production package
-|  |- datasets/          # Strict ingestion and deterministic profiles
-|  |- pipelines/         # Splits, folds, feature roles, and preprocessing
-|  |- training/          # Baseline fitting and evaluation
-|  |- benchmarks/        # Holdout/CV orchestration, ranking, and manifests
-|  |- final_models/       # Verified selection lineage and explicit all-row fitting
-|  |- runs/              # Immutable experiment records and comparison
-|  |- artifacts/         # Trusted-local model persistence
-|  `- web/               # Thin local FastAPI adapter over public core APIs
-|- frontend/             # Next.js single-user web interface
-|- tests/                # Unit, integration, HTTP, CLI, edge-case, and real-data tests
-|- examples/             # Runnable source-checkout workflows and small CSVs
-|- scripts/              # Release-tag and installed-wheel validation
-|- docs/                 # Tutorial, API, architecture, security, and release guidance
-`- .github/workflows/    # Cross-platform CI and trusted release publishing
-```
+- [Complete local workflow tutorial](docs/tutorial.md)
+- [Python API reference](docs/api.md)
+- [Architecture and design boundaries](docs/architecture.md)
+- [Compatibility and versioning policy](docs/compatibility.md)
+- [Artifact trust and secure-use guidance](docs/security.md)
+- [Release validation](docs/release-validation.md)
+- [Private deployment guide](docs/private-deployment.md)
+- [Maintainer release procedure](docs/releasing.md)
+- [Roadmap](ROADMAP.md)
+- [Changelog](CHANGELOG.md)
+- [Citation metadata](CITATION.cff)
 
-## Project status and current limits
+## Author
 
-**MLForge v0.6.0 combines the feature-complete local Python core with a supported single-user web
-workflow, bounded operator settings, workspace backup, and a private deployment profile.** The web
-adapter reuses the core ML algorithms and evidence model rather than implementing a second training
-system.
+**Asadullah Hussaini** — Creator & Lead Developer
 
-MLForge currently supports local, single-process tabular classification/regression. Cross-validation
-and selection-driven final fitting support both tasks. The web application has a local HTTP
-dataset boundary, dashboard, upload flow, data review, supervised experiment configuration,
-a one-worker comparison/finalization runner with persisted job-level status, detailed
-cross-validation results, safe final-model artifact metadata, and a Models screen backed by verified
-local lineage. It also exposes a schema-validated prediction submission workflow for finalized
-local models, bounded result previews, and complete CSV downloads. MLForge does **not**
-provide hyperparameter tuning, nested evaluation, an untouched
-post-selection test estimate, shared storage, distributed execution,
-request authentication, authenticated public deployment, or monitoring.
+MLForge is an independent software and machine-learning engineering project designed, developed,
+tested, documented, and released under his leadership.
 
-The repository does include a private, loopback-bound single-operator deployment profile. It does
-not provide authenticated public deployment, multi-user isolation, public online model serving, or
-production monitoring.
+**HivMindAI** is the repository and release-maintainer identity. It is not presented as a second
+human author.
 
-The separate shared-service infrastructure milestone remains conditional on real multi-user
-requirements; it is not active development. The
-[roadmap](ROADMAP.md) records these boundaries so planned work is not presented as shipped
-functionality.
+The already-published PyPI v0.6.0 files are immutable and still display their original
+`Author: HivMindAI` metadata and release-candidate wording. This repository correction does not
+rewrite those artifacts; the source metadata now records Asadullah Hussaini as author and HivMindAI
+as maintainer for the next legitimate release.
 
-## Contributing, security, and license
+## Citation
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md) for setup, required checks, and pull-request expectations.
-Report vulnerabilities through the private process in [SECURITY.md](SECURITY.md), and review the
-[artifact security model](docs/security.md) before loading or sharing model files.
+Use the repository's [Citation File Format metadata](CITATION.cff) to cite MLForge. GitHub uses this
+file to provide the repository's **Cite this repository** entry.
 
-MLForge is available under the [Apache License 2.0](LICENSE), including its explicit patent grant.
+## License and Security
+
+MLForge is available under the [Apache License 2.0](LICENSE). Report vulnerabilities through the private process described in [SECURITY.md](SECURITY.md); do not open public issues for suspected security problems.

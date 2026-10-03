@@ -9,9 +9,9 @@ owner accepts the current one with `DONE`.
 - **Critical:** Milestones 0-4 establish a correct, usable local workflow.
 - **Important:** Milestones 5-6 make artifacts usable and prepare a responsible public release.
 - **Feature-complete local product:** Milestones 7-8.1 complete the Python workflow in v0.3.0;
-  Milestone 8.2 packages that workflow for one local web operator in v0.4.0, and Milestone 8.3
-  brings regression parity in v0.5.0. Milestone 8.4 completes bounded local settings and workspace
-  management in v0.6.0.
+  Milestone 8.2 implements the local web-operator workflow as the unpublished 0.4.0 development
+  milestone, and that work ships with regression parity in v0.5.0. Milestone 8.4 completes bounded
+  local settings and workspace management in v0.6.0.
 - **Conditional platform work:** Shared-service portions of Milestones 9-10 remain postponed
   proposals, not active development commitments.
 
@@ -280,7 +280,8 @@ making no new evaluation or deployment-performance claim.
 
 ### Milestone 8.2 - Single-user web workflow and private release profile
 
-**Status:** Accepted by the project owner on 2026-09-02; complete for v0.4.0.
+**Status:** Accepted by the project owner on 2026-09-02 as the 0.4.0 development milestone; first
+published with v0.5.0.
 
 **What changes:** Add a thin FastAPI adapter, SQLite metadata, one bounded worker, a Next.js
 interface for the complete supported classification journey, and a private two-container profile.
@@ -351,10 +352,11 @@ behavior is introduced.
 
 **Status:** Feature-complete local product in maintenance mode.
 
-v0.3.0 established the local Python core, v0.4.0 added the repository- and
-source-archive-distributed web interface and private deployment profile, v0.5.0 brought
-classification/regression parity to comparison, finalization, and prediction, and v0.6.0 adds
-accepted settings, runtime diagnostics, and restorable workspace backups.
+v0.3.0 established the local Python core. The unpublished 0.4.0 development milestone added the
+repository- and source-archive-distributed web interface and private deployment profile; that work
+first shipped with v0.5.0, which also brought classification/regression parity to comparison,
+finalization, and prediction. v0.6.0 adds accepted settings, runtime diagnostics, and restorable
+workspace backups.
 The API, SQLite database, worker, uploaded files, model evidence, artifacts, and prediction outputs
 still belong to one local workspace and one active MLForge process.
 

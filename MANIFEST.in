@@ -2,6 +2,7 @@ include .env.example
 include .dockerignore
 include AGENTS.md
 include CHANGELOG.md
+include CITATION.cff
 include compose.private.yaml
 include CONTRIBUTING.md
 include LICENSE
@@ -19,6 +20,7 @@ include docs/releasing.md
 include docs/security.md
 include docs/tutorial.md
 include docs/assets/benchmark-terminal.svg
+recursive-include docs/assets/screenshots *.png
 recursive-include examples *.csv *.py
 include frontend/.env.example
 include frontend/README.md

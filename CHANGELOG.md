@@ -5,7 +5,17 @@ All notable MLForge changes are recorded here. The project follows semantic vers
 
 ## [Unreleased]
 
-No changes yet.
+### Documentation and metadata
+
+- Identify Asadullah Hussaini as creator and lead developer in the README, source package metadata,
+  and Citation File Format metadata while retaining HivMindAI as the project maintainer identity.
+  The immutable PyPI v0.6.0 artifacts retain their original metadata.
+- Add real web-interface screenshots from one deterministic 25,000-row synthetic demo workflow and
+  include the public generator needed to reproduce its training and prediction CSVs.
+- Update the supported security line to `0.6.x` and distinguish tagged v0.6.0 validation results
+  from later source checkouts.
+- Clarify that the documented 0.4.0 development milestone first shipped publicly in v0.5.0 and was
+  not a standalone tagged or PyPI release.
 
 ## [0.6.0] - 2026-09-12
 
@@ -40,7 +50,10 @@ No changes yet.
 - Upgrade the SQLite web workspace to schema version 2 with a transactional migration that
   preserves existing experiment, job, finalization, and prediction lineage.
 
-## [0.4.0] - 2026-08-31
+## 0.4.0 development milestone - 2026-08-31
+
+This milestone was not tagged or published as a standalone distribution. Its web and deployment
+work first shipped publicly in v0.5.0.
 
 ### Added
 
@@ -60,9 +73,8 @@ No changes yet.
 
 - Distribute the frontend and private-deployment sources in the source archive while keeping the
   Python wheel focused on the importable core and FastAPI adapter.
-- Align the Python package and private frontend on version 0.4.0 and update the roadmap,
-  compatibility policy, release validation, and deployment guidance to describe the product that
-  is actually shipped.
+- Update the roadmap, compatibility policy, release validation, and deployment guidance to
+  describe the implemented web product.
 
 ### Security and operations
 
@@ -172,8 +184,7 @@ selection evidence; it does not fit a final deployment model or provide a nested
 
 [Unreleased]: https://github.com/HivMindAI/mlforge/compare/v0.6.0...HEAD
 [0.6.0]: https://github.com/HivMindAI/mlforge/compare/v0.5.0...v0.6.0
-[0.5.0]: https://github.com/HivMindAI/mlforge/compare/v0.4.0...v0.5.0
-[0.4.0]: https://github.com/HivMindAI/mlforge/compare/v0.3.0...v0.4.0
+[0.5.0]: https://github.com/HivMindAI/mlforge/compare/v0.3.0...v0.5.0
 [0.3.0]: https://github.com/HivMindAI/mlforge/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/HivMindAI/mlforge/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/HivMindAI/mlforge/compare/v0.1.0...v0.2.0
